@@ -50,13 +50,19 @@ root_directory = "C:/Users/Jesse/Documents/Halo2StatsData"
 #global status string
 status = "Nothing happening"
 
-# Clock is ticking - making it global
+# Clock is ticking - making it global            
+# List of gameid's for each tag to be written to a file
+game_ids = []
+            
 
 # Used for games actually purged, but not implemented
 purged_games = 0
 bad_requests = 0
 attempt_limit = 10
 attempts = 0
+
+# Parallel stuff
+page_threads = []
 
 def updateGlobalStatus(update):
     global status
@@ -95,6 +101,39 @@ def threadButtonDownload(gt_entries):
     for gamertag in gamertags:
         threading.Thread(target=downloadStats, args=(gamertag,)).start()
         
+def downloadStatPage(gamertag, pageNumber):
+    global game_ids
+    # This is my error check for 404s for pages.
+    while True:
+    
+        URL = 'https://halo.bungie.net/stats/playerstatshalo2.aspx?player=' + gamertag + '&ctl00_mainContent_bnetpgl_recentgamesChangePage=' + str(pageNumber)
+        page = requests.get(URL)
+        soup = BeautifulSoup(page.content, 'html.parser')
+        page_source = str(soup)
+        
+        # My attempt to fix 404 errors for pages. If we made it past the landing page, no going back. INFINITE reattempts.
+        # Compare 'currentPage' to i and make sure they match, because if a page errors, it -can- go to the landing page (page 1)
+        # Hopefully this will catch a 404 error as there won't be a tag for "currentPage" if it just displays "something's broken...
+        p = soup.find('a', {'class':"rgCurrentPage"}).text
+
+        # Reset loop if failed...
+        if p != str(pageNumber):
+            print("page failed to load, trying again...")
+            continue
+        
+        # Grab every link on the page, and if it has "/Stats/", it's a link to a game
+        all_links = soup.find_all('a', href=True)
+        for link in all_links:
+            href = link['href']
+            if '/Stats/' in href:
+                # 34 is the magic number to start at the Game ID, and truncate once it's not the number anymore
+                game_id = href[34:href.find('&')]
+                
+                # Append the game_id to the list
+                # List appending is proven thread safe! - stack overflow...
+                game_ids.append(game_id)
+        break
+
 def downloadStats(gamertag):
   
     validateTags(gamertag)
@@ -110,8 +149,7 @@ def downloadStats(gamertag):
             return
         else:
             print("Writing to " + s)
-            # List of gameid's for each tag to be written to a file
-            game_ids = []
+
             # root URL - let bs4 do it's thing
             for attempt in range(attempt_limit):
                 print(header.ljust(19) + "Attempting #" + str(attempt+1) + " out of " + str(attempt_limit) + " to get main stat page. ")
@@ -141,41 +179,23 @@ def downloadStats(gamertag):
             updateGlobalStatus(header.ljust(19) + 'Number of pages to get: ' + last_page.partition("ChangePage=")[2]+'\n')
             total_pages = int(last_page.partition("ChangePage=")[2])    
                 
-            # Loop through every page of games and add the URL of each game (25 per page) to list
+            global page_threads
+            # Loop through every page of games IN PARALLEL! and add the URL of each game (25 per page) to list
             for i in range(1,total_pages+1):  
-
-                updateGlobalStatus(header.ljust(19) + 'Getting games on page ' + str(i) + ' of ' + str(total_pages))
+            
+                my_thread = threading.Thread(target=downloadStatPage, args=(gamertag,i,))
+                page_threads.append(my_thread)
+                my_thread.start()
                 
-                # This is my error check for 404s for pages.
-                while True:
+            # Hold the line until ALL game IDs have been appended.
+            for t in page_threads:
+                t.join()
+            
+            print(header.ljust(19) + "All games scraped from pages, downloading games.")
+            #updateGlobalStatus(header.ljust(19) + 'Getting games on page ' + str(i) + ' of ' + str(total_pages))
                 
-                    URL = 'https://halo.bungie.net/stats/playerstatshalo2.aspx?player='+gamertag+'&ctl00_mainContent_bnetpgl_recentgamesChangePage=' + str(i)
-                    page = requests.get(URL)
-                    soup = BeautifulSoup(page.content, 'html.parser')
-                    page_source = str(soup)
-                    
-                    # My attempt to fix 404 errors for pages. If we made it past the landing page, no going back. INFINITE reattempts.
-                    # Compare 'currentPage' to i and make sure they match, because if a page errors, it -can- go to the landing page (page 1)
-                    # Hopefully this will catch a 404 error as there won't be a tag for "currentPage" if it just displays "something's broken...
-                    p = soup.find('a', {'class':"rgCurrentPage"}).text
-
-                    # Reset loop if failed...
-                    if p != str(i):
-                        print("page failed to load, trying again...")
-                        continue
-                    
-                    # Grab every link on the page, and if it has "/Stats/", it's a link to a game
-                    all_links = soup.find_all('a', href=True)
-                    for link in all_links:
-                        href = link['href']
-                        if '/Stats/' in href:
-                            # 34 is the magic number to start at the Game ID, and truncate once it's not the number anymore
-                            game_id = href[34:href.find('&')]
-                            
-                            # Append the game_id to the list
-                            game_ids.append(game_id)
-                    break
-                        
+                
+            global game_ids            
             # Remove duplicates, I don't know why there are duplicates but this results in the same amount of games as bungie.net shows ¯\_(ツ)_/¯
             game_ids = list(dict.fromkeys(game_ids))
             
