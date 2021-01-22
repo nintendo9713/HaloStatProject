@@ -14,6 +14,10 @@ import ast
 import calendar
 from operator import itemgetter
 
+'''
+Anaconda - pyinstaller --onefile HaloStats.py
+'''
+
 # Maybe this will help someone.
 readme_string = """
 Halo Stat Downloader 0.0.0.1 - Current build Halo 2 Only\n\n
@@ -46,7 +50,9 @@ root_directory = "C:/" #os.path.expanduser("~")
 status = "Nothing happening"
 
 # Clock is ticking - making it global
-purged_games = 0
+bad_requests = 0
+attempt_limit = 10
+attempts = 0
 
 def updateGlobalStatus(update):
     global status
@@ -65,12 +71,26 @@ def threadButtonDownload(gt_entry):
         
 def downloadStats(gt_entries):
     gamertags = [e.get() for e in gt_entries]
+    
+    if not gamertags:
+        s = "No gamertags entered..."
+        updateGlobalStatus(s)
+        
     validateTags(gamertags)
     s = "Generating " + ','.join(gt for gt in gamertags if gt.strip()) + " stats..."
     updateGlobalStatus(s)
     
     global root_directory
     sys.path.append(root_directory)
+    
+    # Try to write a 1 Byte dummy file to make sure, because I once ran a 6 hour download that then tried to write, failed, and it ruined my day.
+    try:    
+        test_file = open(root_directory + "/test.txt", "w")
+        test_file.write("t")
+    except:
+        print("No write permissions, change your download destination|| " + root_directory + "/test.txt")
+        tkinter.messagebox.showerror(title="Error", message="No write permissions, change your download destination.")
+        return
     
     # Iterate through if something is entered
     for gamertag in gamertags:
@@ -84,23 +104,31 @@ def downloadStats(gt_entries):
                 # List of gameid's for each tag to be written to a file
                 game_ids = []
                 # root URL - let bs4 do it's thing
-                URL = 'https://halo.bungie.net/stats/PlayerStatsHalo2.aspx?player='+gamertag
-                soup = []
-                page = requests.get(URL)
-                soup = BeautifulSoup(page.content, 'html.parser')
-                
-                page_source = str(soup)
-                
-                # don't ask - just took the closest field to the total games
-                total_games = soup.find("div", {"class": "rgWrap rgInfoPart"}).get_text("|", strip=True).split('|')[0]
-                
-                # get total number of game pages
-                try:
-                    last_page = soup.find('a', {'title':'Last Page'})['href']
-                except TypeError:
-                    pass
+                for attempt in range(attempt_limit):
+                    print("Attempting #" + str(attempt+1) + " out of " + str(attempt_limit) + " to get main stat page. ")
+                    try:
+                        URL = 'https://halo.bungie.net/stats/PlayerStatsHalo2.aspx?player='+gamertag
+                        soup = []
+                        page = requests.get(URL)
+                        soup = BeautifulSoup(page.content, 'html.parser')
+                        
+                        page_source = str(soup)
+
+                        # don't ask - just took the closest field to the total games
+                        total_games = soup.find("div", {"class": "rgWrap rgInfoPart"}).get_text("|", strip=True).split('|')[0]
                     
-                # All these confusing tidbits are bruteforced because I don't know what I'm doing
+                        # get total number of game pages
+                        last_page = soup.find('a', {'title':'Last Page'})['href']
+                    except:
+                        print("Likely 404 error. Let's get it another go.")
+                    else:
+                        break
+                else:
+                    # Failing all attempts - real bad luck....
+                    print("Bungie ain't having it, sorry. Try again in a minute...")
+                    return
+                        
+                    # All these confusing tidbits are bruteforced because I don't know what I'm doing
                 updateGlobalStatus('Number of pages to get for gamertag ' + gamertag + ': ' + last_page.partition("ChangePage=")[2]+'\n')
                 total_pages = int(last_page.partition("ChangePage=")[2])    
                     
@@ -110,21 +138,30 @@ def downloadStats(gt_entries):
 
                     updateGlobalStatus('Getting games on page ' + str(i) + ' of ' + str(total_pages))
                     
-                    URL = 'https://halo.bungie.net/stats/playerstatshalo2.aspx?player='+gamertag+'&ctl00_mainContent_bnetpgl_recentgamesChangePage=' + str(i)
-                    page = requests.get(URL)
-                    soup = BeautifulSoup(page.content, 'html.parser')
-                    page_source = str(soup)
+                    # This is my error check for 404s for pages.
+                    while True:
                     
-                    # Grab every link on the page, and if it has "/Stats/", it's a link to a game
-                    all_links = soup.find_all('a', href=True)
-                    for link in all_links:
-                        href = link['href']
-                        if '/Stats/' in href:
-                            # 34 is the magic number to start at the Game ID, and truncate once it's not the number anymore
-                            game_id = href[34:href.find('&')]
-                            
-                            # Append the game_id to the list
-                            game_ids.append(game_id)
+                        URL = 'https://halo.bungie.net/stats/playerstatshalo2.aspx?player='+gamertag+'&ctl00_mainContent_bnetpgl_recentgamesChangePage=' + str(i)
+                        page = requests.get(URL)
+                        soup = BeautifulSoup(page.content, 'html.parser')
+                        page_source = str(soup)
+                        
+                        # My attempt to fix 404 errors for pages. If we made it past the landing page, no going back. INFINITE reattempts.
+                        if "We were not able to find any record of Halo 2 activity for this player" in page_source:
+                            print("404 error, trying again....")
+                            continue
+                        
+                        # Grab every link on the page, and if it has "/Stats/", it's a link to a game
+                        all_links = soup.find_all('a', href=True)
+                        for link in all_links:
+                            href = link['href']
+                            if '/Stats/' in href:
+                                # 34 is the magic number to start at the Game ID, and truncate once it's not the number anymore
+                                game_id = href[34:href.find('&')]
+                                
+                                # Append the game_id to the list
+                                game_ids.append(game_id)
+                        break
                             
                 # Remove duplicates, I don't know why there are duplicates but this results in the same amount of games as bungie.net shows ¯\_(ツ)_/¯
                 game_ids = list(dict.fromkeys(game_ids))
@@ -148,48 +185,52 @@ def downloadStats(gt_entries):
                 # Game counter
                 game_count = 0
 
-                # For every game_id, parse for available data
-                for game_id in game_ids:
-                    
-                    game_id = game_id.strip()
-                    game_count = game_count + 1
-                    
-                    updateGlobalStatus("[" + gamertag + "] Processing Game # " + str(game_count).rjust(6) + " of ~" + str(total_games) + " games || Game ID: " + game_id.rjust(9))
+                # Keep iterating through game_ids until they don't error out...
+                while (game_ids):
+                    # For every game_id, parse for available data
+                    for game_id in game_ids:
+                        game_id = game_id.strip()
                         
-                    # set URL to online game_id
-                    URL = "http://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid=" + game_id
-                    page = requests.get(URL)
-                    soup = BeautifulSoup(page.content, 'html.parser')
-                    page_source = str(soup)
-                    
-                    # Parse Individual Games Here
-                    try:
-                        summary = soup.find("ul", {"class":"summary"})
-                        summary = summary.get_text("|",strip=True).split('|')
-                        # Since 'Length' was purged from Bungie, replace with 'Ranked' or 'Unranked' if an ExpBar is present
-                        if (soup.find("div", {"class": "ExpBarText"}) == None):
-                            summary[3] = 'Unranked'
-                        else:
-                            summary[3] = 'Ranked'
-                    except:
-                        global purged_games
-                        purged_games = purged_games + 1
-                        continue
-                    
-                    # This points to the carnage report table
-                    carnage_report = soup.find_all("div", {"id":"ctl00_mainContent_bnetpgd_pnlKills"})
-                    # Apply some strips and splits
-                    carnage_report = carnage_report[0].get_text("|",strip=True).split('|')
-                    
-                    # Write this structure 
-                    raw_output_file.write("[" + str(game_id) + "]|")
-                    # No need for "[]" since the list will print them
-                    raw_output_file.write(str(summary)+ "|")
-                    raw_output_file.write(str(carnage_report))
-                    raw_output_file.write('\n')
+                        updateGlobalStatus("[" + gamertag + "] Processing Game # " + str(game_count).rjust(6) + " of ~" + str(total_games) + " games || Game ID: " + game_id.rjust(9))
+                            
+                        # set URL to online game_id
+                        URL = "http://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid=" + game_id
+                        page = requests.get(URL)
+                        soup = BeautifulSoup(page.content, 'html.parser')
+                        page_source = str(soup)
                         
+                        # Parse Individual Games Here
+                        try:
+                            summary = soup.find("ul", {"class":"summary"})
+                            summary = summary.get_text("|",strip=True).split('|')
+                            # Since 'Length' was purged from Bungie, replace with 'Ranked' or 'Unranked' if an ExpBar is present
+                            if (soup.find("div", {"class": "ExpBarText"}) == None):
+                                summary[3] = 'Unranked'
+                            else:
+                                summary[3] = 'Ranked'
+                        except:
+                            print("Got a bad request...gonna repeat it...")
+                            global bad_requests
+                            bad_requests = bad_requests + 1
+                            continue
+                        
+                        # This points to the carnage report table
+                        carnage_report = soup.find_all("div", {"id":"ctl00_mainContent_bnetpgd_pnlKills"})
+                        # Apply some strips and splits
+                        carnage_report = carnage_report[0].get_text("|",strip=True).split('|')
+                        
+                        # Write this structure 
+                        raw_output_file.write("[" + str(game_id) + "]|")
+                        # No need for "[]" since the list will print them
+                        raw_output_file.write(str(summary)+ "|")
+                        raw_output_file.write(str(carnage_report))
+                        raw_output_file.write('\n')
+                        
+                        # If it made it this far, we're good.
+                        game_ids.remove(game_id)
+                        game_count = game_count + 1
                 
-                updateGlobalStatus("Done downloding games. Ready to parse.")
+                updateGlobalStatus("Done downloding games. " + str(bad_requests) + " bad requests that had to be re-downloaded. Ready to parse.")
 
 # TODO                            
 def validateTags(gamertags):
@@ -796,30 +837,30 @@ def parseStats(gt_entries):
     write_stat(s)
     
     # Outputs the sorted list of Maps by most played
-    s = "\nMap Selection Frequency\n------------------------------"
+    s = "\nMap Selection Frequency\n--------------------------------------"
     write_stat(s) 
     
     for i in sorted_map_played_list:
         # Create a nicely formatted string showing "map : count / total_games"
-        s = i[0].ljust(15) + ": " + str(i[1]).rjust(5) + " / " + total_games
+        s = i[0].ljust(15) + ": " + str(i[1]).rjust(5) + " / " + total_games + " | " + "{:.2%}".format(int(i[1])/int(total_games)).rjust(6)
         write_stat(s) 
      
     # Outputs the sorted list of Game Types by most played
-    s = "\nGame Type Frequency\n-----------------------------------"
+    s = "\nGame Type Frequency\n-------------------------------------------"
     write_stat(s) 
      
     for i in game_type_list_sorted:
         # Create a nicely formatted string showing "game_type : count / total_games"
-        s = i[0].ljust(20) + ": " + str(i[1]).rjust(5) + " / " + total_games
+        s = i[0].ljust(20) + ": " + str(i[1]).rjust(5) + " / " + total_games + " | " + "{:.2%}".format(int(i[1])/int(total_games)).rjust(6)
         write_stat(s) 
         
     # Outputs the sorted list of Playlist by most played
-    s = "\nPlaylist Frequency\n-----------------------------------"
+    s = "\nPlaylist Frequency\n-------------------------------------------"
     write_stat(s)  
         
     for i in playlist_list_sorted:
         # Create a nicely formatted string showing "game_type : count / total_games"
-        s = i[0].ljust(20) + ": " + str(i[1]).rjust(5) + " / " + total_games
+        s = i[0].ljust(20) + ": " + str(i[1]).rjust(5) + " / " + total_games + " | " + "{:.2%}".format(int(i[1])/int(total_games)).rjust(6)
         write_stat(s) 
 
     # Outputs the sorted list of Clans by most played with
