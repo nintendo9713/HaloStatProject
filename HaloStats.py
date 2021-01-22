@@ -16,21 +16,22 @@ from operator import itemgetter
 
 '''
 Anaconda - pyinstaller --onefile HaloStats.py
+exec(open("C:\\Users\\Jesse\\Documents\\Halo2StatsData\\HaloStats.py").read())
 '''
 
 # Maybe this will help someone.
 readme_string = """
-Halo Stat Downloader 0.0.0.1 - Current build Halo 2 Only\n\n
-Adjust directory if desired.\n
-Put gamertags in the boxes and click download stats.\n
-Be patient, it's taking longer due to server load.\n     
-Once downloaded, you will have a <gamertag>_raw_data.txt file saved.\n
-Now click the PARSE button, and you will have a file generated for\n
-<gamertag>_stats.txt.  The file will combine all your gamertags entered\n
-to a single stat breakdown.\n\n
-I hope it works well for you.\n\n
+Halo Stat Downloader 0.1.1.7 - Current build Halo 2 Only\n
+Adjust directory if desired.
+Put gamertags in the boxes and click download stats (multithreaded)
+Be patient, it's taking longer due to server load. 
+Once downloaded, you will have a <gamertag>_raw_data.txt file saved. for each
+gamertag entered. \n
+Now click the PARSE button, and you will have a file generated for
+<1st gamertag>_stats.txt.  The file will combine all your gamertags entered
+to a single stat breakdown.\n
+I hope it works well for you.\n
 **Currently - Compare stats not working**
-
 """
 # default root directory - can be changed in GUI
 '''
@@ -43,13 +44,16 @@ else:
     application_path = os.path.dirname(os.path.abspath(__file__))
 '''    
 
-root_directory = "C:/" #os.path.expanduser("~")
-#root_directory = "C:/Users/Jesse/Documents/Halo2StatsData/"
+#root_directory = "C:/" #os.path.expanduser("~")
+root_directory = "C:/Users/Jesse/Documents/Halo2StatsData"
 
 #global status string
 status = "Nothing happening"
 
 # Clock is ticking - making it global
+
+# Used for games actually purged, but not implemented
+purged_games = 0
 bad_requests = 0
 attempt_limit = 10
 attempts = 0
@@ -66,171 +70,181 @@ def browseDirectory(root_entry):
     root_entry.insert(0,root_directory)
     
 # Launch separate thread so GUI doesn't freeze
-def threadButtonDownload(gt_entry):
-    threading.Thread(target=downloadStats, args=(gt_entry,)).start()
-        
-def downloadStats(gt_entries):
-    gamertags = [e.get() for e in gt_entries]
-    
-    if not gamertags:
-        s = "No gamertags entered..."
-        updateGlobalStatus(s)
-        
-    validateTags(gamertags)
-    s = "Generating " + ','.join(gt for gt in gamertags if gt.strip()) + " stats..."
-    updateGlobalStatus(s)
-    
+def threadButtonDownload(gt_entries):
+
     global root_directory
     sys.path.append(root_directory)
     
     # Try to write a 1 Byte dummy file to make sure, because I once ran a 6 hour download that then tried to write, failed, and it ruined my day.
     try:    
         test_file = open(root_directory + "/test.txt", "w")
-        test_file.write("t")
+        test_file.write("stat test - ignore / delete")
     except:
         print("No write permissions, change your download destination|| " + root_directory + "/test.txt")
         tkinter.messagebox.showerror(title="Error", message="No write permissions, change your download destination.")
         return
     
-    # Iterate through if something is entered
+    gamertags = [e.get() for e in gt_entries]
+    
+    if not gamertags:
+        s = "No gamertags entered..."
+        updateGlobalStatus(s)
+        return
+        
+    # if we do have gamertags, let each one run in a thread for maximum power
     for gamertag in gamertags:
-        if gamertag.strip():
-            s = root_directory + "/" + gamertag + "_raw_data.txt"
-            if os.path.exists(s):
-                tkinter.messagebox.showerror(title="Error", message="File: " + s + " already exists.\n\nManually backup or remove file.")
-                continue
-            else:
-                print("Writing to " + s)
-                # List of gameid's for each tag to be written to a file
-                game_ids = []
-                # root URL - let bs4 do it's thing
-                for attempt in range(attempt_limit):
-                    print("Attempting #" + str(attempt+1) + " out of " + str(attempt_limit) + " to get main stat page. ")
-                    try:
-                        URL = 'https://halo.bungie.net/stats/PlayerStatsHalo2.aspx?player='+gamertag
-                        soup = []
-                        page = requests.get(URL)
-                        soup = BeautifulSoup(page.content, 'html.parser')
-                        
-                        page_source = str(soup)
-
-                        # don't ask - just took the closest field to the total games
-                        total_games = soup.find("div", {"class": "rgWrap rgInfoPart"}).get_text("|", strip=True).split('|')[0]
+        threading.Thread(target=downloadStats, args=(gamertag,)).start()
+        
+def downloadStats(gamertag):
+  
+    validateTags(gamertag)
+    
+    header = "[" + gamertag + "] "
+    
+    if gamertag.strip():
+        print(header.ljust(19) + "Generating stats")
+        s = root_directory + "/" + gamertag + "_raw_data.txt"
+        if os.path.exists(s):
+            print("This popup is because I once erased a 14k game file that took hours to download, and I'm only trying to help...")
+            tkinter.messagebox.showerror(title="Error", message="File: " + s + " already exists.\n\nManually backup or remove file.")
+            return
+        else:
+            print("Writing to " + s)
+            # List of gameid's for each tag to be written to a file
+            game_ids = []
+            # root URL - let bs4 do it's thing
+            for attempt in range(attempt_limit):
+                print(header.ljust(19) + "Attempting #" + str(attempt+1) + " out of " + str(attempt_limit) + " to get main stat page. ")
+                try:
+                    URL = 'https://halo.bungie.net/stats/PlayerStatsHalo2.aspx?player='+gamertag
+                    soup = []
+                    page = requests.get(URL)
+                    soup = BeautifulSoup(page.content, 'html.parser')
                     
-                        # get total number of game pages
-                        last_page = soup.find('a', {'title':'Last Page'})['href']
-                    except:
-                        print("Likely 404 error. Let's get it another go.")
-                    else:
-                        break
+                    page_source = str(soup)
+
+                    # don't ask - just took the closest field to the total games
+                    total_games = soup.find("div", {"class": "rgWrap rgInfoPart"}).get_text("|", strip=True).split('|')[0]
+                
+                    # get total number of game pages
+                    last_page = soup.find('a', {'title':'Last Page'})['href']
+                except:
+                    print(header.ljust(19) + "Likely 404 error. Let's get it another go.")
                 else:
-                    # Failing all attempts - real bad luck....
-                    print("Bungie ain't having it, sorry. Try again in a minute...")
-                    return
-                        
-                    # All these confusing tidbits are bruteforced because I don't know what I'm doing
-                updateGlobalStatus('Number of pages to get for gamertag ' + gamertag + ': ' + last_page.partition("ChangePage=")[2]+'\n')
-                total_pages = int(last_page.partition("ChangePage=")[2])    
+                    break
+            else:
+                # Failing all attempts - real bad luck....
+                print(header.ljust(19) + "Bungie ain't having it, sorry. Try again in a minute...")
+                return
                     
-                # Loop through every page of games and add the URL of each game (25 per page) to list
-                print("Total pages: " + str(total_pages))
-                for i in range(1,total_pages+1):  
-
-                    updateGlobalStatus('Getting games on page ' + str(i) + ' of ' + str(total_pages))
-                    
-                    # This is my error check for 404s for pages.
-                    while True:
-                    
-                        URL = 'https://halo.bungie.net/stats/playerstatshalo2.aspx?player='+gamertag+'&ctl00_mainContent_bnetpgl_recentgamesChangePage=' + str(i)
-                        page = requests.get(URL)
-                        soup = BeautifulSoup(page.content, 'html.parser')
-                        page_source = str(soup)
-                        
-                        # My attempt to fix 404 errors for pages. If we made it past the landing page, no going back. INFINITE reattempts.
-                        if "We were not able to find any record of Halo 2 activity for this player" in page_source:
-                            print("404 error, trying again....")
-                            continue
-                        
-                        # Grab every link on the page, and if it has "/Stats/", it's a link to a game
-                        all_links = soup.find_all('a', href=True)
-                        for link in all_links:
-                            href = link['href']
-                            if '/Stats/' in href:
-                                # 34 is the magic number to start at the Game ID, and truncate once it's not the number anymore
-                                game_id = href[34:href.find('&')]
-                                
-                                # Append the game_id to the list
-                                game_ids.append(game_id)
-                        break
-                            
-                # Remove duplicates, I don't know why there are duplicates but this results in the same amount of games as bungie.net shows ¯\_(ツ)_/¯
-                game_ids = list(dict.fromkeys(game_ids))
+                # All these confusing tidbits are bruteforced because I don't know what I'm doing
+            updateGlobalStatus(header.ljust(19) + 'Number of pages to get: ' + last_page.partition("ChangePage=")[2]+'\n')
+            total_pages = int(last_page.partition("ChangePage=")[2])    
                 
-                # If the first entry is not all digits, it's a clan and needs to be purged / popped
-                if not game_ids[0].isdigit():
-                    print("## DEBUG ## - Removing clan from game IDs for " + gamertag) 
-                    game_ids.pop(0)
-                    
-                # Write Game IDs to file
-                with open(root_directory + "/" + gamertag + "_game_ids.txt", 'w') as game_id_file:
-                    for i in game_ids:
-                        game_id_file.write(i+'\n')
-                        
-                updateGlobalStatus("Processing games for: " + gamertag)
-                        
-                        
-                # This file is the input for the Halo2_StatParser.py program
-                raw_output_file = open(s, "w")
+            # Loop through every page of games and add the URL of each game (25 per page) to list
+            for i in range(1,total_pages+1):  
 
-                # Game counter
-                game_count = 0
-
-                # Keep iterating through game_ids until they don't error out...
-                while (game_ids):
-                    # For every game_id, parse for available data
-                    for game_id in game_ids:
-                        game_id = game_id.strip()
-                        
-                        updateGlobalStatus("[" + gamertag + "] Processing Game # " + str(game_count).rjust(6) + " of ~" + str(total_games) + " games || Game ID: " + game_id.rjust(9))
-                            
-                        # set URL to online game_id
-                        URL = "http://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid=" + game_id
-                        page = requests.get(URL)
-                        soup = BeautifulSoup(page.content, 'html.parser')
-                        page_source = str(soup)
-                        
-                        # Parse Individual Games Here
-                        try:
-                            summary = soup.find("ul", {"class":"summary"})
-                            summary = summary.get_text("|",strip=True).split('|')
-                            # Since 'Length' was purged from Bungie, replace with 'Ranked' or 'Unranked' if an ExpBar is present
-                            if (soup.find("div", {"class": "ExpBarText"}) == None):
-                                summary[3] = 'Unranked'
-                            else:
-                                summary[3] = 'Ranked'
-                        except:
-                            print("Got a bad request...gonna repeat it...")
-                            global bad_requests
-                            bad_requests = bad_requests + 1
-                            continue
-                        
-                        # This points to the carnage report table
-                        carnage_report = soup.find_all("div", {"id":"ctl00_mainContent_bnetpgd_pnlKills"})
-                        # Apply some strips and splits
-                        carnage_report = carnage_report[0].get_text("|",strip=True).split('|')
-                        
-                        # Write this structure 
-                        raw_output_file.write("[" + str(game_id) + "]|")
-                        # No need for "[]" since the list will print them
-                        raw_output_file.write(str(summary)+ "|")
-                        raw_output_file.write(str(carnage_report))
-                        raw_output_file.write('\n')
-                        
-                        # If it made it this far, we're good.
-                        game_ids.remove(game_id)
-                        game_count = game_count + 1
+                updateGlobalStatus(header.ljust(19) + 'Getting games on page ' + str(i) + ' of ' + str(total_pages))
                 
-                updateGlobalStatus("Done downloding games. " + str(bad_requests) + " bad requests that had to be re-downloaded. Ready to parse.")
+                # This is my error check for 404s for pages.
+                while True:
+                
+                    URL = 'https://halo.bungie.net/stats/playerstatshalo2.aspx?player='+gamertag+'&ctl00_mainContent_bnetpgl_recentgamesChangePage=' + str(i)
+                    page = requests.get(URL)
+                    soup = BeautifulSoup(page.content, 'html.parser')
+                    page_source = str(soup)
+                    
+                    # My attempt to fix 404 errors for pages. If we made it past the landing page, no going back. INFINITE reattempts.
+                    # Compare 'currentPage' to i and make sure they match, because if a page errors, it -can- go to the landing page (page 1)
+                    # Hopefully this will catch a 404 error as there won't be a tag for "currentPage" if it just displays "something's broken...
+                    p = soup.find('a', {'class':"rgCurrentPage"}).text
+
+                    # Reset loop if failed...
+                    if p != str(i):
+                        print("page failed to load, trying again...")
+                        continue
+                    
+                    # Grab every link on the page, and if it has "/Stats/", it's a link to a game
+                    all_links = soup.find_all('a', href=True)
+                    for link in all_links:
+                        href = link['href']
+                        if '/Stats/' in href:
+                            # 34 is the magic number to start at the Game ID, and truncate once it's not the number anymore
+                            game_id = href[34:href.find('&')]
+                            
+                            # Append the game_id to the list
+                            game_ids.append(game_id)
+                    break
+                        
+            # Remove duplicates, I don't know why there are duplicates but this results in the same amount of games as bungie.net shows ¯\_(ツ)_/¯
+            game_ids = list(dict.fromkeys(game_ids))
+            
+            # If the first entry is not all digits, it's a clan and needs to be purged / popped
+            if not game_ids[0].isdigit():
+                print(header.ljust(19) + "## DEBUG ## - Removing clan from game IDs.") 
+                game_ids.pop(0)
+                
+            # Write Game IDs to file
+            with open(root_directory + "/" + gamertag + "_game_ids.txt", 'w') as game_id_file:
+                for i in game_ids:
+                    game_id_file.write(i+'\n')
+                    
+            updateGlobalStatus(header.ljust(19) + "Processing games")
+                    
+                    
+            # This file is the input for the Halo2_StatParser.py program
+            raw_output_file = open(s, "w")
+
+            # Game counter
+            game_count = 1
+
+            # Keep iterating through game_ids until they don't error out...
+            while (game_ids):
+
+                # For every game_id, parse for available data
+                for game_id in game_ids:
+                    game_id = game_id.strip()
+                    
+                    updateGlobalStatus(header.ljust(19) + str(len(game_ids)).rjust(5) + " games left to download || Game ID: " + game_id.rjust(9))
+                        
+                    # set URL to online game_id
+                    URL = "http://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid=" + game_id
+                    page = requests.get(URL)
+                    soup = BeautifulSoup(page.content, 'html.parser')
+                    page_source = str(soup)
+                    
+                    # Parse Individual Games Here
+                    try:
+                        summary = soup.find("ul", {"class":"summary"})
+                        summary = summary.get_text("|",strip=True).split('|')
+                        # Since 'Length' was purged from Bungie, replace with 'Ranked' or 'Unranked' if an ExpBar is present
+                        if (soup.find("div", {"class": "ExpBarText"}) == None):
+                            summary[3] = 'Unranked'
+                        else:
+                            summary[3] = 'Ranked'
+                    except:
+                        print(header.ljust(19) + "Got a bad request...putting it back at bottom of list to try later...")
+                        global bad_requests
+                        bad_requests = bad_requests + 1
+                        continue
+                    
+                    # This points to the carnage report table
+                    carnage_report = soup.find_all("div", {"id":"ctl00_mainContent_bnetpgd_pnlKills"})
+                    # Apply some strips and splits
+                    carnage_report = carnage_report[0].get_text("|",strip=True).split('|')
+                    
+                    # Write this structure 
+                    raw_output_file.write("[" + str(game_id) + "]|")
+                    # No need for "[]" since the list will print them
+                    raw_output_file.write(str(summary)+ "|")
+                    raw_output_file.write(str(carnage_report))
+                    raw_output_file.write('\n')
+                    
+                    # If it made it this far, we're good.
+                    game_ids.remove(game_id)
+                    game_count = game_count + 1
+            
+            updateGlobalStatus(header.ljust(19) + "Done downloding games. " + str(bad_requests) + " bad requests that had to be re-downloaded. Ready to parse.")
 
 # TODO                            
 def validateTags(gamertags):
@@ -912,7 +926,7 @@ def parseStats(gt_entries):
     # Outputs a complete hour by hour breakdown of games played
     s = ""
     s += "\n"
-    s += "Complete hour by hour breakdown:\n--------------------------------\n"
+    s += "Complete hour by hour breakdown (CST):\n--------------------------\n"
     s += dict_to_string(time_dictionary)
     write_stat(s)
 
@@ -1127,6 +1141,7 @@ class App(Frame):
         self.status_label.grid(row=8,column=0,columnspan=6,sticky=W)
         
         self.readme_label = Text(master)
+        global readme_string
         self.readme_label.insert(END, readme_string)
         self.readme_label.grid(row=9,column=0,columnspan=6,sticky=EW)
         self.readme_label.config(state=DISABLED)
