@@ -17,6 +17,8 @@ from operator import itemgetter
 '''
 Anaconda - pyinstaller --onefile HaloStats.py
 exec(open("C:\\Users\\Jesse\\Documents\\Halo2StatsData\\HaloStats.py").read())
+cd C:\ Users\ Jesse\ Documents\ Halo2StatsData python HaloStats.py
+
 '''
 
 # Maybe this will help someone.
@@ -44,8 +46,8 @@ else:
     application_path = os.path.dirname(os.path.abspath(__file__))
 '''    
 
-#root_directory = "C:/" #os.path.expanduser("~")
-root_directory = "C:/Users/Jesse/Documents/Halo2StatsData"
+root_directory = "C:/Users" #os.path.expanduser("~")
+#root_directory = "C:/Users/Jesse/Documents/Halo2StatsData"
 
 #global status string
 status = "Nothing happening"
@@ -53,7 +55,7 @@ status = "Nothing happening"
 # Clock is ticking - making it global            
 # List of gameid's for each tag to be written to a file
 game_ids = []
-            
+raw_data = []
 
 # Used for games actually purged, but not implemented
 purged_games = 0
@@ -63,6 +65,9 @@ attempts = 0
 
 # Parallel stuff
 page_threads = []
+game_threads = []
+games_per_chunk = 250
+chunks_remaining = 0
 
 def updateGlobalStatus(update):
     global status
@@ -126,13 +131,76 @@ def downloadStatPage(gamertag, pageNumber):
         for link in all_links:
             href = link['href']
             if '/Stats/' in href:
+                
                 # 34 is the magic number to start at the Game ID, and truncate once it's not the number anymore
                 game_id = href[34:href.find('&')]
+                # Make sure the "clan" stat page doesn't register
+                if game_id.isdigit():
+                    # Append the game_id to the list
+                    # List appending is proven thread safe! - stack overflow...
+                    game_ids.append(game_id)
                 
-                # Append the game_id to the list
-                # List appending is proven thread safe! - stack overflow...
-                game_ids.append(game_id)
+                
         break
+    
+
+
+def downloadGamePage(gamertag,ids):
+
+    header = "[" + gamertag + "] "
+    
+    #print(header.ljust(19) + "Starting thread...")
+    #id_bk = ids
+    # Keep iterating through ids until they don't error out...
+    while (ids):
+
+        # For every game_id, parse for available data
+        for game_id in ids:
+            game_id = game_id.strip()
+            
+            #updateGlobalStatus(header.ljust(19) + str(len(ids)).rjust(5) + " games left to download || Game ID: " + game_id.rjust(9))
+                
+            # set URL to online game_id
+            URL = "http://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid=" + game_id
+            page = requests.get(URL)
+            soup = BeautifulSoup(page.content, 'html.parser')
+            page_source = str(soup)
+            
+            # Parse Individual Games Here
+            try:
+                summary = soup.find("ul", {"class":"summary"})
+                summary = summary.get_text("|",strip=True).split('|')
+                # Since 'Length' was purged from Bungie, replace with 'Ranked' or 'Unranked' if an ExpBar is present
+                if (soup.find("div", {"class": "ExpBarText"}) == None):
+                    summary[3] = 'Unranked'
+                else:
+                    summary[3] = 'Ranked'
+            except:
+                print(header.ljust(19) + "Got a bad request at " + ("[" + game_id + "]").rjust(12) + "...putting it back at bottom of list to try later...")
+                
+                global bad_requests
+                with threading.Lock():
+                    bad_requests = bad_requests + 1
+                continue
+            
+            # This points to the carnage report table
+            carnage_report = soup.find_all("div", {"id":"ctl00_mainContent_bnetpgd_pnlKills"})
+            # Apply some strips and splits
+            carnage_report = carnage_report[0].get_text("|",strip=True).split('|')
+            
+            global raw_data
+            # Write this structure - no need for "[]" since the list will print them
+            d = "[" + str(game_id) + "]|" + str(summary) + "|" + str(carnage_report)
+            raw_data.append(d)
+            
+            # If it made it this far, we're good.
+            ids.remove(game_id)
+            global chunks_remaining
+            
+    with threading.Lock():
+        chunks_remaining = chunks_remaining - 1
+    
+    print(str(chunks_remaining) + " chunks left processing...")
 
 def downloadStats(gamertag):
   
@@ -199,10 +267,16 @@ def downloadStats(gamertag):
             # Remove duplicates, I don't know why there are duplicates but this results in the same amount of games as bungie.net shows ¯\_(ツ)_/¯
             game_ids = list(dict.fromkeys(game_ids))
             
+            # Sort it out
+            game_ids.sort(key = int)
+            
             # If the first entry is not all digits, it's a clan and needs to be purged / popped
-            if not game_ids[0].isdigit():
-                print(header.ljust(19) + "## DEBUG ## - Removing clan from game IDs.") 
-                game_ids.pop(0)
+            # EDIT - I'm dumb - now it's multithreaded and not guranteed to be first.
+            for g in game_ids:
+                if not g.isdigit():
+                    # This is because when we grab every "Stats" link on the page, one link is to the clan stats. Should probably handle that elsewhere...
+                    print(header.ljust(19) + "## DEBUG ## - Removing non numerical gameID (clan name) from game IDs.") 
+                    game_ids.pop(0)
                 
             # Write Game IDs to file
             with open(root_directory + "/" + gamertag + "_game_ids.txt", 'w') as game_id_file:
@@ -210,60 +284,35 @@ def downloadStats(gamertag):
                     game_id_file.write(i+'\n')
                     
             updateGlobalStatus(header.ljust(19) + "Processing games")
-                    
-                    
-            # This file is the input for the Halo2_StatParser.py program
-            raw_output_file = open(s, "w")
 
-            # Game counter
-            game_count = 1
-
-            # Keep iterating through game_ids until they don't error out...
-            while (game_ids):
-
-                # For every game_id, parse for available data
-                for game_id in game_ids:
-                    game_id = game_id.strip()
-                    
-                    updateGlobalStatus(header.ljust(19) + str(len(game_ids)).rjust(5) + " games left to download || Game ID: " + game_id.rjust(9))
-                        
-                    # set URL to online game_id
-                    URL = "http://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid=" + game_id
-                    page = requests.get(URL)
-                    soup = BeautifulSoup(page.content, 'html.parser')
-                    page_source = str(soup)
-                    
-                    # Parse Individual Games Here
-                    try:
-                        summary = soup.find("ul", {"class":"summary"})
-                        summary = summary.get_text("|",strip=True).split('|')
-                        # Since 'Length' was purged from Bungie, replace with 'Ranked' or 'Unranked' if an ExpBar is present
-                        if (soup.find("div", {"class": "ExpBarText"}) == None):
-                            summary[3] = 'Unranked'
-                        else:
-                            summary[3] = 'Ranked'
-                    except:
-                        print(header.ljust(19) + "Got a bad request...putting it back at bottom of list to try later...")
-                        global bad_requests
-                        bad_requests = bad_requests + 1
-                        continue
-                    
-                    # This points to the carnage report table
-                    carnage_report = soup.find_all("div", {"id":"ctl00_mainContent_bnetpgd_pnlKills"})
-                    # Apply some strips and splits
-                    carnage_report = carnage_report[0].get_text("|",strip=True).split('|')
-                    
-                    # Write this structure 
-                    raw_output_file.write("[" + str(game_id) + "]|")
-                    # No need for "[]" since the list will print them
-                    raw_output_file.write(str(summary)+ "|")
-                    raw_output_file.write(str(carnage_report))
-                    raw_output_file.write('\n')
-                    
-                    # If it made it this far, we're good.
-                    game_ids.remove(game_id)
-                    game_count = game_count + 1
+            # yields chunks of game_ids to work with
+            global games_per_chunk
+            chunks = [game_ids[x:x+games_per_chunk] for x in range(0, len(game_ids), games_per_chunk)]
             
+            # How many chunks we making? Makes easir 
+            global chunks_remaining
+            chunks_remaining = len(chunks)
+            
+            global game_threads
+            # Loop through every game  - broken into 25 games per thread
+            for c in chunks:
+                my_thread = threading.Thread(target=downloadGamePage, args=(gamertag,c,))
+                game_threads.append(my_thread)
+                my_thread.start()
+                
+            # Hold the line until ALL game IDs have been appended.
+            for t in game_threads:
+                t.join()
+                
+            # Now that all threads are done, write to file and be done.
+            
+            # Sort  by the gameID 
+            raw_data.sort(key=lambda l: int(l.split("|")[0][1:-1]),reverse=False)
+            
+            # This is what is used for parsing
+            with open(s, "w") as raw_output_file:
+                raw_output_file.write("\n".join(raw_data))
+                
             updateGlobalStatus(header.ljust(19) + "Done downloding games. " + str(bad_requests) + " bad requests that had to be re-downloaded. Ready to parse.")
 
 # TODO                            
@@ -1049,7 +1098,7 @@ def parseStats(gt_entries):
     s += "\nTop 100 Most Played with:\n------------------------\n"
     for i in range(0, 100):
         try:
-            s += "  " + sorted_player_list[i][0].ljust(16) + ": " + str(sorted_player_list[i][1]).rjust(5) + "\n"
+            s += "  " + sorted_player_list[i][0].ljust(18) + ": " + str(sorted_player_list[i][1]).rjust(5) + "\n"
         except:
             pass
     write_stat(s)
