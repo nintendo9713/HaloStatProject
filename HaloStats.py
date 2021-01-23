@@ -18,34 +18,26 @@ from operator import itemgetter
 Anaconda - pyinstaller --onefile HaloStats.py
 exec(open("C:\\Users\\Jesse\\Documents\\Halo2StatsData\\HaloStats.py").read())
 cd C:\ Users\ Jesse\ Documents\ Halo2StatsData python HaloStats.py
-
 '''
 
 # Maybe this will help someone.
 readme_string = """
-Halo Stat Downloader 0.1.1.7 - Current build Halo 2 Only\n
-Adjust directory if desired.
+Halo Stat Downloader 1.1.7.0 - Current build Halo 2 Only\n
+Adjust directory if desired (likely have to)
 Put gamertags in the boxes and click download stats (multithreaded)
 Be patient, it's taking longer due to server load. 
+** ALL GAMERTAGS DOWNLOAD INVIDUALLY **\n
 Once downloaded, you will have a <gamertag>_raw_data.txt file saved. for each
 gamertag entered. \n
-Now click the PARSE button, and you will have a file generated for
-<1st gamertag>_stats.txt.  The file will combine all your gamertags entered
-to a single stat breakdown.\n
+Parsing will combine all the gamertags entered to a single stat breakdown
+and is saved as <first_gamertag>_stats.txt.  
+
+If you want to parse individually, just parse with one gamertag entered
+at a time, takes just a second.\n
 I hope it works well for you.\n
 **Currently - Compare stats not working**
 """
 # default root directory - can be changed in GUI
-'''
-if getattr(sys, 'frozen', False):
-    # If the application is run as a bundle, the PyInstaller bootloader
-    # extends the sys module by a flag frozen=True and sets the app 
-    # path into variable _MEIPASS'.
-    application_path = sys._MEIPASS
-else:
-    application_path = os.path.dirname(os.path.abspath(__file__))
-'''    
-
 root_directory = "C:/Users" #os.path.expanduser("~")
 #root_directory = "C:/Users/Jesse/Documents/Halo2StatsData"
 
@@ -53,8 +45,12 @@ root_directory = "C:/Users" #os.path.expanduser("~")
 status = "Nothing happening"
 
 # Clock is ticking - making it global            
-# List of gameid's for each tag to be written to a file
+# This will hold ["gamertag1", [], "gamertag2", []] as the big universal data.
+gamertag_id_dict = {}
+# Groups all gamertag_id_dict gameIDs into one to parse together for an overall snapshot
 game_ids = []
+# This will hold ["gamertag1", [raw data], "gamertag2" .. ] as the HUGE universal data
+gamertag_raw_data_dict = {}
 raw_data = []
 
 # Used for games actually purged, but not implemented
@@ -66,6 +62,8 @@ attempts = 0
 # Parallel stuff
 page_threads = []
 game_threads = []
+gamertag_threads = []
+# I got rejected connections at 150. 200 may work, but with 5 tags may be too many requests. Change at your own discretion...
 games_per_chunk = 250
 chunks_remaining = 0
 
@@ -102,12 +100,30 @@ def threadButtonDownload(gt_entries):
         updateGlobalStatus(s)
         return
         
+    global gamertag_id_dict
+    global gamertag_raw_data_dict
+    
     # if we do have gamertags, let each one run in a thread for maximum power
     for gamertag in gamertags:
-        threading.Thread(target=downloadStats, args=(gamertag,)).start()
+        # Initialize an empty list for each gamertag for gameIDs and raw data
+        gamertag_id_dict[gamertag] = []
+        gamertag_raw_data_dict[gamertag] = []
+        my_thread = threading.Thread(target=downloadStats, args=(gamertag,))
+        gamertag_threads.append(my_thread)
+        my_thread.start()
+        
+        # Current version fix for error - This stops all tags running in parallel since I made gameIDs global which is messing it up.
+        #my_thread.join()
+        
+    for t in gamertag_threads:
+        t.join()
+    
         
 def downloadStatPage(gamertag, pageNumber):
-    global game_ids
+
+    header = "[" + gamertag + "] "
+    
+    global gamertag_id_dict
     # This is my error check for 404s for pages.
     while True:
     
@@ -116,15 +132,28 @@ def downloadStatPage(gamertag, pageNumber):
         soup = BeautifulSoup(page.content, 'html.parser')
         page_source = str(soup)
         
-        # My attempt to fix 404 errors for pages. If we made it past the landing page, no going back. INFINITE reattempts.
-        # Compare 'currentPage' to i and make sure they match, because if a page errors, it -can- go to the landing page (page 1)
-        # Hopefully this will catch a 404 error as there won't be a tag for "currentPage" if it just displays "something's broken...
-        p = soup.find('a', {'class':"rgCurrentPage"}).text
+        # Try 10 times, then forget about it
+        global attempt_limit
+        for attempt in range(attempt_limit):
+            # My attempt to fix 404 errors for pages. If we made it past the landing page, no going back. INFINITE reattempts.
+            # Compare 'currentPage' to i and make sure they match, because if a page errors, it -can- go to the landing page (page 1)
+            # Hopefully this will catch a 404 error as there won't be a tag for "currentPage" if it just displays "something's broken...
+            try:
+                p = soup.find('a', {'class':"rgCurrentPage"}).text
+                p == str(pageNumber)
+                
+            except:
+                print(header.ljust(19) + "Page #" + str(pageNumber).rjust(4) + " - 404 error (I think), let's retry... Attempt # " + str(attempt+1) + " of " + str(attempt_limit))
+                # Wait and try again
+                time.sleep(1)
+                continue
+            else:
+                break
+        else:
+            print(header.ljust(19) + "Page #" + str(pageNumber).rjust(4) + " -  Failed too many times, consider the page purged...")
+            global purged_games
+            purged_games = purged_games + 25
 
-        # Reset loop if failed...
-        if p != str(pageNumber):
-            print("page failed to load, trying again...")
-            continue
         
         # Grab every link on the page, and if it has "/Stats/", it's a link to a game
         all_links = soup.find_all('a', href=True)
@@ -138,7 +167,8 @@ def downloadStatPage(gamertag, pageNumber):
                 if game_id.isdigit():
                     # Append the game_id to the list
                     # List appending is proven thread safe! - stack overflow...
-                    game_ids.append(game_id)
+                    gamertag_id_dict[gamertag].append(game_id)
+                    #game_ids.append(game_id)
                 
                 
         break
@@ -188,19 +218,19 @@ def downloadGamePage(gamertag,ids):
             # Apply some strips and splits
             carnage_report = carnage_report[0].get_text("|",strip=True).split('|')
             
-            global raw_data
-            # Write this structure - no need for "[]" since the list will print them
+            global gamertag_raw_data_dict
+            # Write this structure - no need for "[]" since the list will print them 
             d = "[" + str(game_id) + "]|" + str(summary) + "|" + str(carnage_report)
-            raw_data.append(d)
+            gamertag_raw_data_dict[gamertag].append(d)
             
             # If it made it this far, we're good.
             ids.remove(game_id)
-            global chunks_remaining
             
+    global chunks_remaining       
     with threading.Lock():
         chunks_remaining = chunks_remaining - 1
     
-    print(str(chunks_remaining) + " chunks left processing...")
+    print(header.ljust(19) + "Processed chunk.  " + str(chunks_remaining).rjust(4) + " total chunks left processing...")
 
 def downloadStats(gamertag):
   
@@ -235,6 +265,8 @@ def downloadStats(gamertag):
                     # get total number of game pages
                     last_page = soup.find('a', {'title':'Last Page'})['href']
                 except:
+                    # Wait a second before trying again
+                    time.sleep(1)
                     print(header.ljust(19) + "Likely 404 error. Let's get it another go.")
                 else:
                     break
@@ -244,7 +276,7 @@ def downloadStats(gamertag):
                 return
                     
                 # All these confusing tidbits are bruteforced because I don't know what I'm doing
-            updateGlobalStatus(header.ljust(19) + 'Number of pages to get: ' + last_page.partition("ChangePage=")[2]+'\n')
+            updateGlobalStatus(header.ljust(19) + 'Number of pages to get: ' + last_page.partition("ChangePage=")[2])
             total_pages = int(last_page.partition("ChangePage=")[2])    
                 
             global page_threads
@@ -263,35 +295,36 @@ def downloadStats(gamertag):
             #updateGlobalStatus(header.ljust(19) + 'Getting games on page ' + str(i) + ' of ' + str(total_pages))
                 
                 
-            global game_ids            
+            global gamertag_id_dict        
             # Remove duplicates, I don't know why there are duplicates but this results in the same amount of games as bungie.net shows ¯\_(ツ)_/¯
-            game_ids = list(dict.fromkeys(game_ids))
+            gamertag_id_dict[gamertag] = list(dict.fromkeys(gamertag_id_dict[gamertag]))
             
             # Sort it out
-            game_ids.sort(key = int)
+            gamertag_id_dict[gamertag].sort(key = int)
             
             # If the first entry is not all digits, it's a clan and needs to be purged / popped
             # EDIT - I'm dumb - now it's multithreaded and not guranteed to be first.
-            for g in game_ids:
+            for g in gamertag_id_dict[gamertag]:
                 if not g.isdigit():
                     # This is because when we grab every "Stats" link on the page, one link is to the clan stats. Should probably handle that elsewhere...
                     print(header.ljust(19) + "## DEBUG ## - Removing non numerical gameID (clan name) from game IDs.") 
-                    game_ids.pop(0)
+                    gamertag_id_dict[gamertag].pop(0)
                 
             # Write Game IDs to file
             with open(root_directory + "/" + gamertag + "_game_ids.txt", 'w') as game_id_file:
-                for i in game_ids:
+                for i in gamertag_id_dict[gamertag]:
                     game_id_file.write(i+'\n')
                     
             updateGlobalStatus(header.ljust(19) + "Processing games")
 
             # yields chunks of game_ids to work with
             global games_per_chunk
-            chunks = [game_ids[x:x+games_per_chunk] for x in range(0, len(game_ids), games_per_chunk)]
+            chunks = [gamertag_id_dict[gamertag][x:x+games_per_chunk] for x in range(0, len(gamertag_id_dict[gamertag]), games_per_chunk)]
             
             # How many chunks we making? Makes easir 
             global chunks_remaining
-            chunks_remaining = len(chunks)
+            with threading.Lock():
+                chunks_remaining = chunks_remaining + len(chunks)
             
             global game_threads
             # Loop through every game  - broken into 25 games per thread
@@ -307,11 +340,11 @@ def downloadStats(gamertag):
             # Now that all threads are done, write to file and be done.
             
             # Sort  by the gameID 
-            raw_data.sort(key=lambda l: int(l.split("|")[0][1:-1]),reverse=False)
+            gamertag_raw_data_dict[gamertag].sort(key=lambda l: int(l.split("|")[0][1:-1]),reverse=False)
             
             # This is what is used for parsing
             with open(s, "w") as raw_output_file:
-                raw_output_file.write("\n".join(raw_data))
+                raw_output_file.write("\n".join(gamertag_raw_data_dict[gamertag]))
                 
             updateGlobalStatus(header.ljust(19) + "Done downloding games. " + str(bad_requests) + " bad requests that had to be re-downloaded. Ready to parse.")
 
@@ -340,7 +373,11 @@ def parseStats(gt_entries):
     
     # Output file
     global root_directory
-    output_file_name = root_directory + "/" + gamertag[0] + "_stats.txt"
+    output_file_name = ""
+    if len(gamertag) > 1:
+        output_file_name = root_directory + "/" + gamertag[0] + "_combined_stats.txt"
+    else:
+        output_file_name = root_directory + "/" + gamertag[0] + "_stats.txt"
     output_file = open(output_file_name, "w")
     
     for gt in gamertag:
