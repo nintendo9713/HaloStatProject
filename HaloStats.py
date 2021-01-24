@@ -56,7 +56,7 @@ raw_data = []
 # Used for games actually purged, but not implemented
 purged_games = 0
 bad_requests = 0
-attempt_limit = 10
+attempt_limit = 30
 attempts = 0
 
 # Parallel stuff
@@ -152,7 +152,8 @@ def downloadStatPage(gamertag, pageNumber):
         else:
             print(header.ljust(19) + "Page #" + str(pageNumber).rjust(4) + " -  Failed too many times, consider the page purged...")
             global purged_games
-            purged_games = purged_games + 25
+            with threading.Lock():
+                purged_games = purged_games + 25
 
         
         # Grab every link on the page, and if it has "/Stats/", it's a link to a game
@@ -242,7 +243,7 @@ def downloadStats(gamertag):
         print(header.ljust(19) + "Generating stats")
         s = root_directory + "/" + gamertag + "_raw_data.txt"
         if os.path.exists(s):
-            print("This popup is because I once erased a 14k game file that took hours to download, and I'm only trying to help...")
+            print(header.just(19) + "Raw data text file already exists.  Manually backup or remove file.  This is to prevent overwriting on accident.")
             tkinter.messagebox.showerror(title="Error", message="File: " + s + " already exists.\n\nManually backup or remove file.")
             return
         else:
@@ -354,19 +355,21 @@ def validateTags(gamertags):
 
 
 # Launch separate thread so GUI doesn't freeze
-def threadButtonParse(gt_entry):
-    threading.Thread(target=parseStats, args=(gt_entry,)).start()
+def threadButtonParse(gt_entries,h2h_entries):
+    threading.Thread(target=parseStats, args=(gt_entries,h2h_entries,)).start()
     
 
-def parseStats(gt_entries):
+def parseStats(gt_entries, h2h_entries):
     gamertags = [e.get() for e in gt_entries]
     s = "Parsing " + ','.join(gt for gt in gamertags if gt.strip()) + " stats... (shouldn't take more than 5 seconds)"
     updateGlobalStatus(s)
     
     # @TODO - Pass "Compare Stats entries and populate
-    vs_gamertag = []
+    vs_gamertag = [e.get() for e in h2h_entries]
+    #vs_gamertag = ["HpD ScOpEd", "Leviathan II", "Southern Slayer", "Zim Zim Zim Zim"]
     
     gamertag = list(filter(None, gamertags))
+    vs_gamertag = list(filter(None, vs_gamertag))
     
     if not gamertag[0]:
         updateGlobalStatus("No gamertags entered. Try again.")
@@ -798,7 +801,7 @@ def parseStats(gt_entries):
         winning_tracker = [False, False]
         
         # If any Head to Head gamertags is any element of the carnage report - assume it counts
-        head_to_head_enabled = True if any(q in vs_gamertag for q in carnage_report_data) else False
+        head_to_head_enabled = True if any(q.lower() in (gt.lower() for gt in vs_gamertag) for q in carnage_report_data) else False
         
         
         
@@ -806,7 +809,8 @@ def parseStats(gt_entries):
         for i in carnage_report[1:]:
         
             # If the player name is any of the submitted gamertags, enable
-            is_gamertag = True if i[0] in gamertag else False
+            #is_gamertag = True if i[0] in gamertag else False
+            is_gamertag = True if i[0].lower() in (gt.lower() for gt in gamertag) else False
             
             if is_gamertag and is_clanmatch:
                 # Append the latest Clan name and increase by 1
@@ -819,11 +823,11 @@ def parseStats(gt_entries):
             # Head to Head .....
             # If ranked and vs. player is in game, add it.
             if head_to_head_enabled and is_ranked:
-                if i[0] in vs_gamertag:
+                if i[0].lower() in (gt.lower() for gt in vs_gamertag):
                     kda = list(map(int, i[2:5]))
                     head_to_head_opponent += kda
                     head_to_head_games += 1
-                if i[0] in gamertag:
+                if i[0].lower() in (gt.lower() for gt in gamertag):
                     kda = list(map(int, i[2:5]))
                     head_to_head_player += kda
                     
@@ -1092,7 +1096,6 @@ def parseStats(gt_entries):
             s += month.ljust(10) + ": 0.00 over 0 games\n"
     write_stat(s)
 
-
     # Output total K/D/A's & ratios 
     s = ""
     s += "\n"
@@ -1129,17 +1132,6 @@ def parseStats(gt_entries):
         s += m .ljust(15) + ": " + "{:.3f}".format(kda[3]) + "\n"
     write_stat(s)
 
-    # Most Players played w/ preview
-    s = ""
-    s += "\n"
-    s += "\nTop 100 Most Played with:\n------------------------\n"
-    for i in range(0, 100):
-        try:
-            s += "  " + sorted_player_list[i][0].ljust(18) + ": " + str(sorted_player_list[i][1]).rjust(5) + "\n"
-        except:
-            pass
-    write_stat(s)
-
     # Win Rate Outputs
     s = ""
     s += "\n"
@@ -1150,7 +1142,6 @@ def parseStats(gt_entries):
         rate = float(wins/(ranked_team_games))
         s += "\nWins: " + str(wins).rjust(5) + " | Losses : " + str(losses).rjust(5) + " | Win Rate: " + "{:.2%}".format(rate).rjust(5) 
     write_stat(s)
-
 
     # Head to Head Mode:
     if vs_gamertag:
@@ -1165,11 +1156,22 @@ def parseStats(gt_entries):
         s += "\nData taken from " + str(head_to_head_games) + " games."
         write_stat(s)
     
+    # Most Players played w/ preview
+    s = ""
+    s += "\n"
+    s += "\nMost Played With:\n------------------------\n"
+    i = 0
+    while (sorted_player_list[i][1] > 15):
+        try:
+            s +="  " + sorted_player_list[i][0].ljust(18) + ": " + str(sorted_player_list[i][1]).rjust(5) + "\n"
+            i = i + 1
+        except:
+            pass
+
+    write_stat(s)   
+    
     updateGlobalStatus("Done parsing.")
     output_file.close()
-    
-def updateGameCount(gt):
-    print("GGGG")
     
 def totalGameCount(gamertag):
     URL = 'https://halo.bungie.net/stats/PlayerStatsHalo2.aspx?player='+gamertag
@@ -1213,7 +1215,6 @@ class App(Frame):
            
            self.gamertag_entry.append(Entry(width=16))
            self.gamertag_entry[i].grid(row=i+2,column=0)
-           self.gamertag_entry[i].bind("<<Leave>>", lambda event:updateGameCount(self.gamertag_entry[i]))
            
            self.head2headgt_entry.append(Entry(width=16))
            self.head2headgt_entry[i].grid(row=i+2,column=1,sticky=W)
@@ -1239,7 +1240,7 @@ class App(Frame):
         self.save_offline_checkbox.grid(row=5,columnspan=3,column=2,sticky=EW)
         '''
         
-        self.parse_stats = Button(text="Parse Halo Stats", font = ('Sans','10','bold'), command=lambda: threadButtonParse(self.gamertag_entry))
+        self.parse_stats = Button(text="Parse Halo Stats", font = ('Sans','10','bold'), command=lambda: threadButtonParse(self.gamertag_entry, self.head2headgt_entry))
         self.parse_stats.grid(row=6,rowspan=2,column=2,columnspan=3,sticky=EW)
         self.parse_stats.grid_columnconfigure(0, weight=1)
         
