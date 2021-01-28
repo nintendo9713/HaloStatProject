@@ -55,8 +55,8 @@ Please reach out /u/nintendo9713 or @nintendo9713#8042 Discord for help.
 """
 
 # default root directory - can be changed in GUI
-#root_directory = "C:/Users" #os.path.expanduser("~")
-root_directory = "C:\\Users\\Jesse\\Documents\\Halo2StatsData\\TESTING"
+root_directory = os.path.expanduser("~")
+#root_directory = "C:\\Users\\Jesse\\Documents\\Halo2StatsData\\TESTING"
 
 #global status string
 status = "Nothing happening"
