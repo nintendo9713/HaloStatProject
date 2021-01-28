@@ -30,22 +30,28 @@ cd C:\ Users\ Jesse\ Documents\ Halo2StatsData python HaloStats.py
 
 # Maybe this will help someone.
 readme_string = """
-Halo Stat Downloader 3.4.3.0 - Halo 2 and 3 downloads...\n
-Adjust directory if desired (likely have to)
-Put gamertags in the boxes and click download stats (multithreaded)
-Be patient, it's taking longer due to server load. 
-** ALL GAMERTAGS DOWNLOAD INVIDUALLY **\n
-Once downloaded, you will have a <gamertag><gamertag>_raw_data.Hx.txt file saved. for each
-gamertag entered. \n
-Parsing will combine all the gamertags entered to a single stat breakdown
-and is saved as <first_gamertag>/<first_gamertag>_combined_stats.txt.  
+Halo Stat Downloader 3.4.3.0 - Halo 2 and 3 downloads...
 
-If a single tag is parsed, it's just <gamertag>/<gamertag>_stats.Hx.txt
+• Adjust directory if desired (likely have to)
+• Put gamertags in the boxes and click download stats (multithreaded)
+• Be patient, it's taking longer due to server load 
 
-If you want to parse individually, just parse with one gamertag entered
-at a time, takes just a second.\n
-I hope it works well for you.\n
-To compare ranked K/D against a friend, put their tags in the comparison slots
+** ALL GAMERTAGS DOWNLOAD INVIDUALLY **
+
+Once downloaded, you will have a:
+• <gamertag>/<gamertag>_raw_data.Hx.txt file saved for each tag
+• <gamertag>/<gamertag>_game_ids.Hx.txt file saved for each tag
+• <gamertag>/<gamertag>_saved_pages.Hx.txt file saved for each tag
+
+The raw_data file has every game + carnage report as an ASCII string.
+
+Parsing will combine all the gamertags entered to a single stat breakdown.
+• saved as <first_gamertag>/<first_gamertag>_combined_stats.txt.  
+• if a single tag is parsed, it's just <gamertag>/<gamertag>_stats.Hx.txt
+• if you want to parse individually, just populate one field
+• to compare ranked K/D against a friend, put their tags in the comparison slots
+
+Please reach out /u/nintendo9713 or @nintendo9713#8042 Discord for help.
 """
 
 # default root directory - can be changed in GUI
