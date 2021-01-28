@@ -65,11 +65,13 @@ status = "Nothing happening"
 # This will hold ["gamertag1", [], "gamertag2", []] as the big universal data.
 h2_gamertag_id_dict = {}
 h3_gamertag_id_dict = {}
+hR_gamertag_id_dict = {}
 # Groups all h2_gamertag_id_dict gameIDs into one to parse together for an overall snapshot
 h2_game_ids = []
 # This will hold ["gamertag1", [raw data], "gamertag2" .. ] as the HUGE universal data
 h2_gamertag_raw_data_dict = {}
 h3_gamertag_raw_data_dict = {}
+hR_gamertag_raw_data_dict = {}
 raw_data = []
 
 # Used for games actually purged, but not implemented
@@ -83,6 +85,7 @@ attempts = 0
 h2_page_threads = {}
 h3_mm_page_threads = {}
 h3_cus_page_threads = {}
+hR_page_threads = {}
 game_threads = {}
 gamertag_threads = []
 # I got rejected connections at 150. 200 may work, but with 5 tags may be too many requests. Change at your own discretion...
@@ -133,6 +136,10 @@ def threadButtonDownload(gt_entries, halo_version):
     global h3_mm_page_threads
     global h3_cus_page_threads
     
+    global hR_gamertag_id_dict
+    global hR_gamertag_raw_data_dict
+    global hR_page_threads
+    
     global game_threads
     
     # if we do have gamertags, let each one run in a thread for maximum power
@@ -161,6 +168,11 @@ def threadButtonDownload(gt_entries, halo_version):
             h3_gamertag_id_dict[gamertag] = []
             h3_cus_page_threads[gamertag] = []
             h3_gamertag_raw_data_dict[gamertag] = []
+            
+        if halo_version == "R":
+            hR_page_threads[gamertag] = []
+            hR_gamertag_id_dict[gamertag] = []
+            hR_gamertag_raw_data_dict[gamertag] = []
             
         game_threads[gamertag] = []
             
@@ -199,28 +211,53 @@ def downloadStatPage(gamertag, page_number, halo_version):
     for attempt in range(attempt_limit):
         # Wrap in a try to catch errors
         try:
-            # Generic request page data
-            if halo_version == "2":
-                url = 'https://halo.bungie.net/stats/playerstatshalo2.aspx?player={}&ctl00_mainContent_bnetpgl_recentgamesChangePage={}'.format(gamertag,page_number)
-            if halo_version == "3mm":
-                url = 'https://halo.bungie.net/stats/playerstatshalo3.aspx?player={}&ctl00_mainContent_bnetpgl_recentgamesChangePage={}'.format(gamertag,page_number)
-            if halo_version == "3cus":
-                url = 'https://halo.bungie.net/stats/playerstatshalo3.aspx?player={}&cus=1&ctl00_mainContent_bnetpgl_recentgamesChangePage={}'.format(gamertag,page_number)
+        
+            game_ids = []
+            # Reach doesn't have page numbers to assert
+            if halo_version != "R":
             
-            page_data = requests.get(url)
-            page_data_text = page_data.text
-            soup = BeautifulSoup(page_data.content, 'html.parser')
-            
-            #extract game ids from page
-            game_ids = re.findall('gameid=(.*)&amp',page_data_text)
-            
-            # ASSERT page number. Jesus Christ, this took 8 hours of my life to realize a VERY rare chance that a page load reverts back to page 1.
-            # @TODO - change this thing out with regex?
-            # This will likely cause an error to get to the except portion (since it wouldn't have a .text field if not found)
-            p = soup.find('a', {'class':"rgCurrentPage"}).text
-            # But just in case, here's an assertion it was extracted correctly
-            assert p == str(page_number), "Rare error where page 1 loads"
+                # Generic request page data
+                if halo_version == "2":
+                    url = 'https://halo.bungie.net/stats/playerstatshalo2.aspx?player={}&ctl00_mainContent_bnetpgl_recentgamesChangePage={}'.format(gamertag,page_number)
+                if halo_version == "3mm":
+                    url = 'https://halo.bungie.net/stats/playerstatshalo3.aspx?player={}&ctl00_mainContent_bnetpgl_recentgamesChangePage={}'.format(gamertag,page_number)
+                if halo_version == "3cus":
+                    url = 'https://halo.bungie.net/stats/playerstatshalo3.aspx?player={}&cus=1&ctl00_mainContent_bnetpgl_recentgamesChangePage={}'.format(gamertag,page_number)
+                
+                page_data = requests.get(url)
+                page_data_text = page_data.text
+                soup = BeautifulSoup(page_data.content, 'html.parser')
+                
+                #extract game ids from page
+                game_ids = re.findall('gameid=(.*)&amp',page_data_text)
+                
+                print("Page " + str(page_number) + ' ' + str(game_ids))
+                # ASSERT page number. Jesus Christ, this took 8 hours of my life to realize a VERY rare chance that a page load reverts back to page 1.
+                # @TODO - change this thing out with regex?
+                # This will likely cause an error to get to the except portion (since it wouldn't have a .text field if not found)
+                p = soup.find('a', {'class':"rgCurrentPage"}).text
+                # But just in case, here's an assertion it was extracted correctly
+                assert p == str(page_number), "Rare error where page 1 loads"
            
+            if halo_version == "R":
+                url = 'https://halo.bungie.net/stats/reach/playergamehistory.aspx?vc=0&player={}&page={}'.format(gamertag,page_number)
+                page_data = requests.get(url)
+                page_data_text = page_data.text
+                soup = BeautifulSoup(page_data.content, 'html.parser')
+                
+                #links = soup.find('tr ', {'class':"rgCurrentPage"})
+                for i in range(0,25):
+                    try:
+                        s = soup.find('tr', {'id':'ctl00_mainContent_recentgames_ctl00__'+str(i)})
+                        #print(str(s) + '\n\n')
+                        t = re.findall('gameid=(.*)&amp', str(s))
+                        t = [i.split('&')[0] for i in t]
+                        game_ids.append(t[0])
+                    except Exception as e:
+                        #print(e)
+                        pass
+                    
+            print("Page # " + str(page_number) + " got " + str(len(game_ids)) + " game ids.")
             # For safe measure, just lock when appending
             with threading.Lock():
                 # Removing duplicates here
@@ -231,6 +268,8 @@ def downloadStatPage(gamertag, page_number, halo_version):
                         h2_gamertag_id_dict[gamertag].append(game_id)
                     if halo_version[0] == "3":
                         h3_gamertag_id_dict[gamertag].append(game_id)
+                    if halo_version[0] == "R":
+                        hR_gamertag_id_dict[gamertag].append(game_id)
                         
                 # Open the file, and dump all 25 into it
                 with open(pages_file_path,'a') as p:
@@ -241,6 +280,8 @@ def downloadStatPage(gamertag, page_number, halo_version):
                         p.write(str(page_number) + "mm\n")   
                     if halo_version == "3cus":
                         p.write(str(page_number) + "cus\n")   
+                    if halo_version == "R":
+                        p.write(str(page_number) + "\n")  
                     
                     
         # Could be 404, temporarily purged, or even the elusive 'load page 1' even though you requested a different page
@@ -277,49 +318,64 @@ def downloadGamePage(gamertag,ids,thread_number,total_threads,halo_version):
                 # Strip of [] - I think?
                 game_id = game_id.strip() 
                 
-                # Generic request page data
-                #game = 'https://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid={}&player={}'.format(game_id, gamertag)
-                #game = 'https://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid={}'.format(game_id)
-                game = 'https://halo.bungie.net/Stats/GameStatsHalo' + halo_version + '.aspx?gameid={}'.format(game_id)
-                game_data = requests.get(game)
-                game_text = game_data.text  
-                soup = BeautifulSoup(game_data.content, 'html.parser')
-                
-                try:
-                    # Populate the summary here, basic info about the match
-                    summary = soup.find("ul", {"class":"summary"})
-                    summary = summary.get_text("|",strip=True).split('|')
-                    # Since 'Length' was purged from Bungie, replace with 'Ranked' or 'Unranked'
+                if halo_version != "R":
+                    # Generic request page data
+                    #game = 'https://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid={}&player={}'.format(game_id, gamertag)
+                    #game = 'https://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid={}'.format(game_id)
+                    game = 'https://halo.bungie.net/Stats/GameStatsHalo' + halo_version + '.aspx?gameid={}'.format(game_id)
+                    game_data = requests.get(game)
+                    game_text = game_data.text  
+                    soup = BeautifulSoup(game_data.content, 'html.parser')
                     
-                    # If Halo 2, just search for ExpBar
-                    if halo_version == "2":
-                        if (soup.find("div", {"class": "ExpBarText"}) == None):
-                            summary[3] = 'Unranked'
+                    try:
+                        # Populate the summary here, basic info about the match
+                        summary = soup.find("ul", {"class":"summary"})
+                        summary = summary.get_text("|",strip=True).split('|')
+                        # Since 'Length' was purged from Bungie, replace with 'Ranked' or 'Unranked'
+                        
+                        # If Halo 2, just search for ExpBar
+                        if halo_version == "2":
+                            if (soup.find("div", {"class": "ExpBarText"}) == None):
+                                summary[3] = 'Unranked'
+                            else:
+                                summary[3] = 'Ranked'
+                        # If Halo 3, search for span# - if all empty, then unranked
                         else:
-                            summary[3] = 'Ranked'
-                    # If Halo 3, search for span# - if all empty, then unranked
-                    else:
-                        #ranked = soup.find_all("span", {"class": "num"})
-                        ranked = soup.find_all("span", attrs={"class":"num"})
-                        # if all are empty, then no ranks found
-                        if all(x.text == "" for x in ranked):
-                            summary[3] = 'Unranked'
-                        else:
-                            summary[3] = 'Ranked'
+                            #ranked = soup.find_all("span", {"class": "num"})
+                            ranked = soup.find_all("span", attrs={"class":"num"})
+                            # if all are empty, then no ranks found
+                            if all(x.text == "" for x in ranked):
+                                summary[3] = 'Unranked'
+                            else:
+                                summary[3] = 'Ranked'
 
-                # For any number of reasons, can fail - just push to bottom
-                except:
-                    print(header.ljust(19) + "Got a bad request at " + ("[" + game_id + "]").rjust(12) + "...putting it back at bottom of list to try later...")
+                    # For any number of reasons, can fail - just push to bottom
+                    except:
+                        print(header.ljust(19) + "Got a bad request at " + ("[" + game_id + "]").rjust(12) + "...putting it back at bottom of list to try later...")
+                        
+                        # Keeping track of how many bad requests we were hit with 
+                        with threading.Lock():
+                            bad_requests = bad_requests + 1
+                        continue
                     
-                    # Keeping track of how many bad requests we were hit with 
-                    with threading.Lock():
-                        bad_requests = bad_requests + 1
-                    continue
-                
-                # This points to the carnage report table
-                carnage_report = soup.find_all("div", {"id":"ctl00_mainContent_bnetpgd_pnlKills"})
-                # Apply some strips and splits
-                carnage_report = carnage_report[0].get_text("|",strip=True).split('|')
+                    # This points to the carnage report table
+                    carnage_report = soup.find_all("div", {"id":"ctl00_mainContent_bnetpgd_pnlKills"})
+                    # Apply some strips and splits
+                    carnage_report = carnage_report[0].get_text("|",strip=True).split('|')
+                    
+                else:
+                    #<div class="teamTableViews">
+                    game = 'https://halo.bungie.net/Stats/Reach/GameStats.aspx?gameid={}'.format(game_id)
+                    game_data = requests.get(game)
+                    game_text = game_data.text  
+                    soup = BeautifulSoup(game_data.content, 'html.parser')
+                    
+                    summary = soup.findall("div", {"class":"teamTableViews"})
+                    red_team = summary[0].get_text("|",strip=True).split('|')
+                    blue_team = summary[1].get_text("|",strip=True).split('|')
+                    summary = red_team + "|" + blue_team
+                    carnage_report = ""
+                    
                 
                 global h2_gamertag_raw_data_dict
                 global h3_gamertag_raw_data_dict
@@ -330,6 +386,8 @@ def downloadGamePage(gamertag,ids,thread_number,total_threads,halo_version):
                     h2_gamertag_raw_data_dict[gamertag].append(d)
                 if halo_version == "3":
                     h3_gamertag_raw_data_dict[gamertag].append(d)
+                if halo_version == "R":
+                    hR_gamertag_raw_data_dict[gamertag].append(d)
                     
                 # If it made it this far, we're good.
                 #ids.remove(game_id)
@@ -387,7 +445,7 @@ def downloadStats(gamertag,halo_version):
                     soup = BeautifulSoup(h2_data.content, 'html.parser')
                     total_games = int(soup.find("div", {"class": "rgWrap rgInfoPart"}).get_text("|", strip=True).split('|')[0])
                 
-                else:
+                if halo_version == "3":
                     # Halo 3 
                     url_mm =   'https://halo.bungie.net/stats/playerstatshalo3.aspx?player={}'.format(gamertag)
                     url_cus =  'https://halo.bungie.net/stats/playerstatshalo3.aspx?player={}&cus=1'.format(gamertag)
@@ -407,6 +465,19 @@ def downloadStats(gamertag,halo_version):
                     cus_soup = BeautifulSoup(mm_data.content, 'html.parser')
                     cus_total_games = int(cus_soup.find("div", {"class": "rgWrap rgInfoPart"}).get_text("|", strip=True).split('|')[0])
                     total_games = mm_total_games + cus_total_games
+                    
+                if halo_version == "R":
+                    #url_hR = 'https://halo.bungie.net/stats/reach/playergamehistory.aspx?player={}'.format(gamertag)
+                    url_hR = 'https://halo.bungie.net/Stats/Reach/default.aspx?player={}'.format(gamertag)
+                    hR_data = requests.get(url_hR)
+                    max_data_text = hR_data.text
+                    soup = BeautifulSoup(hR_data.content, 'html.parser')
+                    # Grabs the only tag on the page with the number as a string - removes commas - and converts to int
+                    games_played = int(soup.find("span", attrs={"id":"ctl00_mainContent_gamesPlayedLabel"}).get_text().replace(',',''))
+                    # The +1 is because reach has a page=0 which messes this up
+                    hR_page_total = int(games_played/25) + 1
+                    print(str(hR_page_total) + ' pages. \n\n')
+                    
                 
                 
 
@@ -429,6 +500,9 @@ def downloadStats(gamertag,halo_version):
         if halo_version == "3":
             updateGlobalStatus(header.ljust(19) + 'Number of pages to get: ' + str(mm_page_total + cus_page_total))
             total_pages = mm_page_total + cus_page_total
+        if halo_version == "R":
+            updateGlobalStatus(header.ljust(19) + 'Number of pages to get: ' + str(hR_page_total))
+            total_pages = int(hR_page_total) 
             
             
             
@@ -442,6 +516,7 @@ def downloadStats(gamertag,halo_version):
             # Remove new line char
             pages_downloaded = [x.strip() for x in pages_downloaded] 
         
+        # Halo 2, short and sweet
         if halo_version == "2":        
             
             global h2_page_threads
@@ -462,6 +537,7 @@ def downloadStats(gamertag,halo_version):
             for t in h2_page_threads[gamertag]:
                 t.join()
         
+        # Halo 3 has separate pages for Matchmaking and Customs
         if halo_version == "3":
             global h3_cus_page_threads
             global h3_mm_page_threads
@@ -492,6 +568,26 @@ def downloadStats(gamertag,halo_version):
             # Hold the line until ALL game IDs have been appended
             for t in h3_mm_page_threads[gamertag]:
                 t.join()
+        
+        # For Reach...
+        if halo_version == "R":
+            global hR_page_threads
+            # Reach stats start at page = 0
+            for i in range(0,total_pages):  
+                if str(i) in pages_downloaded:
+                    print(header.ljust(19) + "Already had page # " + str(i))
+                    continue
+                # Launching thread for page " + gamertag + " " + str(i))
+                my_thread = threading.Thread(target=downloadStatPage, args=(gamertag,i,"R",))
+                hR_page_threads[gamertag].append(my_thread)
+                my_thread.start()
+
+                
+            # Subtract the pages we already have to not re-download....
+            updateGlobalStatus(header.ljust(19) + 'New number of pages to get: ' + str(hR_page_total - len(pages_downloaded)))
+            # Hold the line until ALL game IDs have been appended for specific gamertag
+            for t in hR_page_threads[gamertag]:
+                t.join()
             
 
         print(header.ljust(19) + "All games scraped from available pages, downloading games.")
@@ -500,6 +596,7 @@ def downloadStats(gamertag,halo_version):
 
         global h2_gamertag_id_dict
         global h3_gamertag_id_dict
+        global hR_gamertag_id_dict
         
         if halo_version == "2":        
             # Remove duplicates, I don't know why there are duplicates but this results in the same amount of games as bungie.net shows ¯\_(ツ)_/¯
@@ -515,6 +612,13 @@ def downloadStats(gamertag,halo_version):
             
             # Sort it out
             h3_gamertag_id_dict[gamertag].sort(key = int)
+            
+        if halo_version == "R":            
+            # Remove duplicates, deprecated methods created duplicates and I'm just leaving it
+            hR_gamertag_id_dict[gamertag] = list(dict.fromkeys(hR_gamertag_id_dict[gamertag]))
+            
+            # Sort it out
+            hR_gamertag_id_dict[gamertag].sort(key = int)
           
           
           
@@ -529,7 +633,10 @@ def downloadStats(gamertag,halo_version):
             if halo_version == "3":
                 for i in h3_gamertag_id_dict[gamertag]:
                     game_id_file.write(i+'\n')
-
+            if halo_version == "R":
+                for i in hR_gamertag_id_dict[gamertag]:
+                    game_id_file.write(i+'\n')
+                    
         
         # Need to add games to the gameID dictionary that failed to load before - compare game_ids and raw_data. If it didn't produce raw data, then put the ID back in the list to try again
         # Add failed gameIDs from earlier run
@@ -554,14 +661,17 @@ def downloadStats(gamertag,halo_version):
         # If game ID is in gameID, but **not** in raw_data.txt, then we should try to download it
         missing_game_ids = [x for x in set(total_game_ids) if x not in set(total_raw_data)]
 
+
         # Append missing game_ids from raw_data (but got in game_ids.txt)
         print(header.ljust(19) + " Missing " + str(len(missing_game_ids))  + " games - adding them in. ") #+ str(missing_game_ids))
-        
+
         for mgi in missing_game_ids:
             if halo_version == "2":
                 h2_gamertag_id_dict[gamertag].append(mgi)
             if halo_version == "3":
                 h3_gamertag_id_dict[gamertag].append(mgi)
+            if halo_version == "R":
+                hR_gamertag_id_dict[gamertag].append(mgi)
                
         # Remove dupes and sort (again - too tired to think it through)
         if halo_version == "2":        
@@ -575,12 +685,9 @@ def downloadStats(gamertag,halo_version):
             h3_gamertag_id_dict[gamertag] = list(dict.fromkeys(h3_gamertag_id_dict[gamertag]))
             # Sort it out
             h3_gamertag_id_dict[gamertag].sort(key = int)
-               
-               
-       
+            
         updateGlobalStatus(header.ljust(19) + "Processing games...")
-        
-        
+
         # yields chunks of game_ids to work with
         global games_per_chunk
         chunks = 0
@@ -588,11 +695,14 @@ def downloadStats(gamertag,halo_version):
             chunks = [h2_gamertag_id_dict[gamertag][x:x+games_per_chunk] for x in range(0, len(h2_gamertag_id_dict[gamertag]), games_per_chunk)]
         if halo_version == "3":
             chunks = [h3_gamertag_id_dict[gamertag][x:x+games_per_chunk] for x in range(0, len(h3_gamertag_id_dict[gamertag]), games_per_chunk)]
+        if halo_version == "R":
+            chunks = [hR_gamertag_id_dict[gamertag][x:x+games_per_chunk] for x in range(0, len(hR_gamertag_id_dict[gamertag]), games_per_chunk)]
         
         print("Chunks chunked.")
         
         # How many chunks we making? Makes easir 
         global chunks_remaining
+        
         with threading.Lock():
             chunks_remaining = chunks_remaining + len(chunks)
         
@@ -636,10 +746,19 @@ def downloadStats(gamertag,halo_version):
                     raw_output_file.write("\n".join(h3_gamertag_raw_data_dict[gamertag]))
                     raw_output_file.write("\n")
                 
+        if halo_version == "R":
+            if hR_gamertag_raw_data_dict[gamertag]:
+                with open(raw_data_file_path, "a") as raw_output_file:
+                    updateGlobalStatus("Writing to " + raw_data_file_path + ".")
+                    hR_gamertag_raw_data_dict[gamertag] = list(dict.fromkeys(hR_gamertag_raw_data_dict[gamertag]))
+                    raw_output_file.write("\n".join(hR_gamertag_raw_data_dict[gamertag]))
+                    raw_output_file.write("\n")
+                
         
         # Sort the file after because I can't stand being unorganized
         with open(raw_data_file_path, "r+") as raw_output_file:
             contents = raw_output_file.read().splitlines()
+            # In case new lines are present
             contents = list(filter(None, contents))
             #print(str(contents))
             contents.sort(key=lambda l: int(l.split("|")[0][1:-1]),reverse=False)
@@ -647,8 +766,7 @@ def downloadStats(gamertag,halo_version):
             raw_output_file.truncate()
             raw_output_file.write("\n".join(contents))  
             raw_output_file.write("\n")            
-        
-            
+
         updateGlobalStatus(header.ljust(19) + "Done downloading games. " + str(bad_requests) + " bad requests that had to be re-downloaded. Ready to parse.")
 
 # Launch separate thread so GUI doesn't freeze
@@ -715,12 +833,13 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     # Keep highest rank and the associated game_id
     max_rank_overall = [0, 0]
     max_rank_no_clan = [0, 0]
+    max_rank_per_playlist = {}
 
     # Stolen from Stack Overflow
     # Converts dictionary to string
     # @TODO - add formatting - left / right justify & New line fix in file output
     def dict_to_string(d):
-      return str(d).replace(', ','\n\r').replace("u'","").replace("'","")[1:-1]
+      return str(d).replace(', ','\r').replace("u'","").replace("'","")[1:-1]
 
     # Stolen from Stack Overflow
     # Returns key with max value in a dictionary
@@ -1174,6 +1293,13 @@ def parseStats(gt_entries, h2h_entries,halo_version):
                     if not is_clanmatch and int(i[1]) > int(max_rank_no_clan[0]):
                         max_rank_no_clan[0] = i[1]        
                         max_rank_no_clan[1] = game_id
+                        
+                    if playlist in max_rank_per_playlist:
+                        if int(max_rank_per_playlist[playlist][0]) < int(i[1]):
+                            max_rank_per_playlist[playlist][0] = int(i[1])
+                            max_rank_per_playlist[playlist][1] = game_id
+                    else:
+                        max_rank_per_playlist[playlist] = [int(i[1]), game_id]
                     
                     # Quirky stat tracking - don't ask #
                     # Add K/D/A to ranked stats
@@ -1252,6 +1378,8 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     team_color_ranked_list_sorted = sorted(team_color_ranked_dictionary.items(), key=itemgetter(1), reverse=True)
     # Sort the games played per day dictionary
     games_played_per_day_list_sorted = sorted(date_dictionary.items(), key=itemgetter(1), reverse=True)
+    # Sort by highest rank achieved
+    max_rank_per_playlist_sorted = sorted(max_rank_per_playlist.items(), key=itemgetter(1), reverse=True)
 
     #output_file.write(s + '\n')
     
@@ -1387,7 +1515,12 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     s += "\n           Maximum Rank Achieved overall: " + str(max_rank_overall[0]).rjust(3) + " in game ID " + str(max_rank_overall[1])
     s += "\nMaximum Rank Excl. Clan Achieved overall: " + str(max_rank_no_clan[0]).rjust(3) + " in game ID " + str(max_rank_no_clan[1])
     write_stat(s)
-
+    
+    s = ""
+    s += "\nMax Ranks per Playlist:\n-----------------------------------------------"
+    for playlist, rank in max_rank_per_playlist_sorted:
+        s += "\n" + str(playlist.rjust(16)) + "  | Rank : " + str(rank[0]).rjust(3) + " GameID : " + str(rank[1]).rjust(10)
+    write_stat(s)
 
     # Outputs a complete hour by hour breakdown of games played
     s = ""
@@ -1474,6 +1607,8 @@ def parseStats(gt_entries, h2h_entries,halo_version):
 
     write_stat(s)   
     
+    print(str(max_rank_per_playlist_sorted))
+    
     updateGlobalStatus("Done parsing.")
     output_file.close()
     
@@ -1502,7 +1637,7 @@ class App(Frame):
         self.gamertag_entry = []
         self.head2headgt_entry = []
 
-        for i in range(5):
+        for i in range(8):
            
            self.gamertag_entry.append(Entry(width=16))
            self.gamertag_entry[i].grid(row=i+2,column=0)
@@ -1529,6 +1664,13 @@ class App(Frame):
         self.download_stats = Button(textvariable=self.generate_text, font = ('Sans','10','bold'), command=lambda: threadButtonDownload(self.gamertag_entry,"3"))
         self.download_stats.grid(row=3,rowspan=2,column=2,columnspan=3,sticky=EW)
         self.download_stats.grid_columnconfigure(0, weight=1)
+             
+        self.generate_text = StringVar()
+        self.generate_text.set("Download Halo Reach Stats")
+        self.download_stats = Button(textvariable=self.generate_text, font = ('Sans','10','bold'), command=lambda: threadButtonDownload(self.gamertag_entry,"R"))
+        self.download_stats.grid(row=5,rowspan=2,column=2,columnspan=3,sticky=EW)
+        self.download_stats.grid_columnconfigure(0, weight=1)
+        self.download_stats.config(state="disabled")
         
         
         #Unused - not enough time for web page saves
@@ -1541,20 +1683,25 @@ class App(Frame):
         '''
         
         self.parse_stats = Button(text="Parse Halo 2 Stats", font = ('Sans','10','bold'), command=lambda: threadButtonParse(self.gamertag_entry, self.head2headgt_entry, "2"))
-        self.parse_stats.grid(row=5,rowspan=2,column=2,columnspan=3,sticky=EW)
-        self.parse_stats.grid_columnconfigure(0, weight=1)
-        
-        self.parse_stats = Button(text="Parse Halo 3 Stats", font = ('Sans','10','bold'), command=lambda: threadButtonParse(self.gamertag_entry, self.head2headgt_entry, "3"))
         self.parse_stats.grid(row=7,rowspan=2,column=2,columnspan=3,sticky=EW)
         self.parse_stats.grid_columnconfigure(0, weight=1)
         
+        self.parse_stats = Button(text="Parse Halo 3 Stats", font = ('Sans','10','bold'), command=lambda: threadButtonParse(self.gamertag_entry, self.head2headgt_entry, "3"))
+        self.parse_stats.grid(row=9,rowspan=2,column=2,columnspan=3,sticky=EW)
+        self.parse_stats.grid_columnconfigure(0, weight=1)
+        
+        self.parse_stats = Button(text="Parse Halo Reach Stats", font = ('Sans','10','bold'), command=lambda: threadButtonParse(self.gamertag_entry, self.head2headgt_entry, "R"))
+        self.parse_stats.grid(row=11,rowspan=2,column=2,columnspan=3,sticky=EW)
+        self.parse_stats.grid_columnconfigure(0, weight=1)
+        self.parse_stats.config(state="disabled")
+        
         self.status_label = Label(text="", fg="Red", font='Helvetica 10 bold')
-        self.status_label.grid(row=9,column=0,columnspan=6,sticky=W)
+        self.status_label.grid(row=13,column=0,columnspan=6,sticky=W)
         
         self.readme_label = Text(master)
         global readme_string
         self.readme_label.insert(END, readme_string)
-        self.readme_label.grid(row=10,column=0,columnspan=6,sticky=EW)
+        self.readme_label.grid(row=14,column=0,columnspan=6,sticky=EW)
         self.readme_label.config(state=DISABLED)
         
         self.updateStatus()
