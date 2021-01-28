@@ -554,17 +554,33 @@ def downloadStats(gamertag,halo_version):
         # If game ID is in gameID, but **not** in raw_data.txt, then we should try to download it
         missing_game_ids = [x for x in set(total_game_ids) if x not in set(total_raw_data)]
 
-
         # Append missing game_ids from raw_data (but got in game_ids.txt)
-        print(header.ljust(19) + " Missing " + str(len(missing_game_ids))  + " games - adding them in. " + str(missing_game_ids))
+        print(header.ljust(19) + " Missing " + str(len(missing_game_ids))  + " games - adding them in. ") #+ str(missing_game_ids))
+        
         for mgi in missing_game_ids:
             if halo_version == "2":
                 h2_gamertag_id_dict[gamertag].append(mgi)
             if halo_version == "3":
                 h3_gamertag_id_dict[gamertag].append(mgi)
                
-        updateGlobalStatus(header.ljust(19) + "Processing games...")
+        # Remove dupes and sort (again - too tired to think it through)
+        if halo_version == "2":        
+            # Remove duplicates, I don't know why there are duplicates but this results in the same amount of games as bungie.net shows ¯\_(ツ)_/¯
+            h2_gamertag_id_dict[gamertag] = list(dict.fromkeys(h2_gamertag_id_dict[gamertag]))
+            # Sort it out
+            h2_gamertag_id_dict[gamertag].sort(key = int)
 
+        if halo_version == "3":            
+            # Remove duplicates, deprecated methods created duplicates and I'm just leaving it
+            h3_gamertag_id_dict[gamertag] = list(dict.fromkeys(h3_gamertag_id_dict[gamertag]))
+            # Sort it out
+            h3_gamertag_id_dict[gamertag].sort(key = int)
+               
+               
+       
+        updateGlobalStatus(header.ljust(19) + "Processing games...")
+        
+        
         # yields chunks of game_ids to work with
         global games_per_chunk
         chunks = 0
@@ -620,7 +636,19 @@ def downloadStats(gamertag,halo_version):
                     raw_output_file.write("\n".join(h3_gamertag_raw_data_dict[gamertag]))
                     raw_output_file.write("\n")
                 
-    
+        
+        # Sort the file after because I can't stand being unorganized
+        with open(raw_data_file_path, "r+") as raw_output_file:
+            contents = raw_output_file.read().splitlines()
+            contents = list(filter(None, contents))
+            #print(str(contents))
+            contents.sort(key=lambda l: int(l.split("|")[0][1:-1]),reverse=False)
+            raw_output_file.seek(0)
+            raw_output_file.truncate()
+            raw_output_file.write("\n".join(contents))  
+            raw_output_file.write("\n")            
+        
+            
         updateGlobalStatus(header.ljust(19) + "Done downloading games. " + str(bad_requests) + " bad requests that had to be re-downloaded. Ready to parse.")
 
 # Launch separate thread so GUI doesn't freeze
