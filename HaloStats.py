@@ -775,7 +775,11 @@ def threadButtonParse(gt_entries,h2h_entries,halo_version):
     
 
 def parseStats(gt_entries, h2h_entries,halo_version):
+
+    global root_directory
+    
     gamertags = [e.get() for e in gt_entries]
+    
     s = "Parsing " + ','.join(gt for gt in gamertags if gt.strip()) + " stats... (shouldn't take more than 5 seconds)"
     updateGlobalStatus(s)
     
@@ -789,9 +793,8 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     if not gamertag[0]:
         updateGlobalStatus("No gamertags entered. Try again.")
         return
-    
+  
     # Output file
-    global root_directory
     output_file_name = ""
     if len(gamertag) > 1:
         # output_file_name = root_directory + "/" + gamertag[0] + "_combined_stats.H2.txt"
@@ -800,11 +803,14 @@ def parseStats(gt_entries, h2h_entries,halo_version):
         #output_file_name = root_directory + "/" + gamertag[0] + "_stats.H2.txt"
         output_file_name = os.path.join(root_directory,gamertag[0],gamertag[0] + "_stats.H" + halo_version + ".txt").replace("\\","/")
         
+    ascii_stat_page_name = os.path.join(root_directory,gamertag[0],gamertag[0] + "_stat_tables.H" + halo_version + ".txt").replace("\\","/")
+        
     output_file = open(output_file_name, "w")
+    ascii_stat_file = open(ascii_stat_page_name, "w")
     
     for gt in gamertag:
         # Writes the URLs for each gamertag at the top of the file
-        output_file.write("https://halo.bungie.net/stats/PlayerStatsHalo2.aspx?player=" + gt + "\n")
+        output_file.write("https://halo.bungie.net/stats/PlayerStatsHalo2.aspx?player=" + gt.replace(" ", "%20") + "\n")
     
     # Player K/D/A's for specific game categories.  If you think of more, AIM me @dane_cook_89
     player_stats_global         = np.zeros((3,), dtype=int)
@@ -1240,7 +1246,7 @@ def parseStats(gt_entries, h2h_entries,halo_version):
                 dictionary_insert(clan_name_buffer, clans_dictionary)
         
             # First and foremost, if a player - add them to the player dictionary
-            if i[0] not in team_list and i[1] != '*' and i[0] not in gamertag:
+            if i[0] not in team_list and i[1] != '*' and i[0].lower() not in (gt.lower() for gt in gamertag):
                 dictionary_insert(i[0], player_dictionary)
             
             # Head to Head .....
@@ -1273,12 +1279,13 @@ def parseStats(gt_entries, h2h_entries,halo_version):
                 player_stats_global += kda
                
                 # Map K/D/A processing
-                if map_played in map_kd_dictionary:
-                    map_kd_dictionary[map_played][0:3] += kda
-                # For the first time a map is played - initialize a 3 element array
-                else:
-                    map_kd_dictionary[map_played] = np.zeros((4,), dtype=float)
-                    map_kd_dictionary[map_played][0:3] += kda
+                if is_ranked:
+                    if map_played in map_kd_dictionary:
+                        map_kd_dictionary[map_played][0:3] += kda
+                    # For the first time a map is played - initialize a 3 element array
+                    else:
+                        map_kd_dictionary[map_played] = np.zeros((4,), dtype=float)
+                        map_kd_dictionary[map_played][0:3] += kda
                 
                 if not is_custom:
                     # If it's not custom, it must but matchmade..
@@ -1298,8 +1305,9 @@ def parseStats(gt_entries, h2h_entries,halo_version):
                         if int(max_rank_per_playlist[playlist][0]) < int(i[1]):
                             max_rank_per_playlist[playlist][0] = int(i[1])
                             max_rank_per_playlist[playlist][1] = game_id
+                            max_rank_per_playlist[playlist][2] = date
                     else:
-                        max_rank_per_playlist[playlist] = [int(i[1]), game_id]
+                        max_rank_per_playlist[playlist] = [int(i[1]), game_id, date]
                     
                     # Quirky stat tracking - don't ask #
                     # Add K/D/A to ranked stats
@@ -1361,6 +1369,26 @@ def parseStats(gt_entries, h2h_entries,halo_version):
                     winning_tracker[0] = True
                 else :
                     winning_tracker[1] = True
+                    
+    
+        
+        # This was 100% bruteforced to desired output.  I just wanted to make a table of the raw data line....
+        cr     = carnage_report.tolist()
+        new_cr = [cr[x:x+9] for x in range(0,sum(len(x) for x in cr),9)]
+        ascii_stat_file.write(str(structure[0]) + '\n')
+        ascii_stat_file.write(str(structure[1]) + '\n')
+        for i in new_cr:
+            for idx, n in enumerate(i):
+                if str(n[0]) in team_list or str(n[1]) == "*":
+                    n[0] =  ("[" + n[0] + "]").center(20)
+                if str(n[0]) not in team_list:
+                    n[0] = str(n[0]).ljust(20)
+                ascii_stat_file.write(str(n[0]) + " " + str(n[1]).center(7) + " " + str(n[2]).center(9) + " " +
+                    str(n[3]).center(7) + " " + str(n[4]).center(12) + " " + str(n[5]).center(9) + " " + 
+                    str(n[6]).center(11) + " " + str(n[7]).center(9) + " " + str(n[8]).center(9) + '\n')
+                
+        ascii_stat_file.write('\n')
+        
 
     # Sort the player dictionary by most played with --> least
     sorted_player_list = sorted(player_dictionary.items(), key = lambda x:x[1], reverse=True)
@@ -1517,9 +1545,9 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     write_stat(s)
     
     s = ""
-    s += "\nMax Ranks per Playlist:\n-----------------------------------------------"
+    s += "\nMax Ranks per Playlist:\n------------------------------------------------------------------------"
     for playlist, rank in max_rank_per_playlist_sorted:
-        s += "\n" + str(playlist.rjust(16)) + "  | Rank : " + str(rank[0]).rjust(3) + " GameID : " + str(rank[1]).rjust(10)
+        s += "\n" + str(playlist.rjust(16)) + "  | Rank : " + str(rank[0]).rjust(3) + " | GameID : " + str(rank[1]).rjust(10) + " | Date : " + str(rank[2]).rjust(10)
     write_stat(s)
 
     # Outputs a complete hour by hour breakdown of games played
@@ -1559,7 +1587,7 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     # Map specific K/D
     s = ""
     s += "\n"
-    s += "\nMap Specific K/D: "
+    s += "\nMap Specific Ranked K/D: "
     s += "\n----------------------\n"
     # Alphabetically sort the maps
     map_kd_dictionary = dict( sorted(map_kd_dictionary.items(), key=lambda x: x[0].lower()) )
@@ -1607,7 +1635,7 @@ def parseStats(gt_entries, h2h_entries,halo_version):
 
     write_stat(s)   
     
-    print(str(max_rank_per_playlist_sorted))
+    #print(str(max_rank_per_playlist_sorted))
     
     updateGlobalStatus("Done parsing.")
     output_file.close()
