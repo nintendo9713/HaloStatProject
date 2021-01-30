@@ -839,7 +839,9 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     # Keep highest rank and the associated game_id
     max_rank_overall = [0, 0]
     max_rank_no_clan = [0, 0]
-    max_rank_per_playlist = {}
+    # { Playlist , [rank, id, date, time], maxgame, earned]
+    # {'Team Slayer', [[r,gid,date,time],max_game,earned_game]
+    rank_per_playlist = {}
 
     # Stolen from Stack Overflow
     # Converts dictionary to string
@@ -1301,13 +1303,15 @@ def parseStats(gt_entries, h2h_entries,halo_version):
                         max_rank_no_clan[0] = i[1]        
                         max_rank_no_clan[1] = game_id
                         
-                    if playlist in max_rank_per_playlist:
-                        if int(max_rank_per_playlist[playlist][0]) < int(i[1]):
-                            max_rank_per_playlist[playlist][0] = int(i[1])
-                            max_rank_per_playlist[playlist][1] = game_id
-                            max_rank_per_playlist[playlist][2] = date
+                        
+                    
+                    # Store every ranked game in chronological order
+                    if playlist in rank_per_playlist:
+                        # Append the next game
+                        rank_per_playlist[playlist][0].append([int(i[1]), game_id, date, time])
                     else:
-                        max_rank_per_playlist[playlist] = [int(i[1]), game_id, date]
+                        rank_per_playlist[playlist] =[[],[],[]]
+                        rank_per_playlist[playlist][0].append([int(i[1]), game_id, date, time])
                     
                     # Quirky stat tracking - don't ask #
                     # Add K/D/A to ranked stats
@@ -1407,7 +1411,7 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     # Sort the games played per day dictionary
     games_played_per_day_list_sorted = sorted(date_dictionary.items(), key=itemgetter(1), reverse=True)
     # Sort by highest rank achieved
-    max_rank_per_playlist_sorted = sorted(max_rank_per_playlist.items(), key=itemgetter(1), reverse=True)
+    #rank_per_playlist_sorted = sorted(rank_per_playlist.items(), key=itemgetter(1), reverse=True)
 
     #output_file.write(s + '\n')
     
@@ -1538,16 +1542,44 @@ def parseStats(gt_entries, h2h_entries,halo_version):
         s += "\n  [Major]: ".ljust(18) + str(clanmatch_games_major).rjust(6) + " / " + str(clanmatch_games).rjust(5) + " | " + "{:.2%}".format(clanmatch_games_major/int(clanmatch_games)).rjust(7)
     write_stat(s)
 
+    '''
     s = ""
     s += "\n"
     s += "\n           Maximum Rank Achieved overall: " + str(max_rank_overall[0]).rjust(3) + " in game ID " + str(max_rank_overall[1])
     s += "\nMaximum Rank Excl. Clan Achieved overall: " + str(max_rank_no_clan[0]).rjust(3) + " in game ID " + str(max_rank_no_clan[1])
     write_stat(s)
+    '''
     
+    # This below got out of hand quickly, but no time to improve
+    max_rank = []
+    earned_game = []
     s = ""
-    s += "\nMax Ranks per Playlist:\n------------------------------------------------------------------------"
-    for playlist, rank in max_rank_per_playlist_sorted:
-        s += "\n" + str(playlist.rjust(16)) + "  | Rank : " + str(rank[0]).rjust(3) + " | GameID : " + str(rank[1]).rjust(10) + " | Date : " + str(rank[2]).rjust(10)
+    s += "\nMax Ranks per Playlist:\n------------------------------------------------------------------------------------------------"
+    for playlist in rank_per_playlist:
+        # Rare occasion where somebody played one game in a playlist, can't take a -1 index
+        if len(rank_per_playlist[playlist][0]) == 1:
+            continue
+        
+        # Sort by game IDs since guaranteed to be in chronological order
+        rank_per_playlist[playlist][0].sort(key=lambda x: x[1])
+        
+        # Grab the max.
+        max_game = max(rank_per_playlist[playlist][0] , key=lambda x: x[0])       
+        rank_per_playlist[playlist][1] = max_game
+        earned_index = rank_per_playlist[playlist][0].index(max_game)-1
+        earned_game = rank_per_playlist[playlist][0][earned_index] 
+        
+        rank_per_playlist[playlist][2] = earned_game
+        
+        max_rank.append([playlist, max_game[0], earned_game])
+        
+    # Sort by the max rank achieved int the list
+    max_rank.sort(key=lambda x: x[1], reverse=True)
+    
+    # Print out in sorted order the max rank and earning game
+    for playlist in max_rank:
+        s += "\n" + str(playlist[0].rjust(16)) + "  | Highest Rank Earned : " + str(playlist[1]).rjust(3) + " | GameID : " + str(playlist[2][1]).rjust(10) + " | Date : " + str(playlist[2][2]).rjust(10) + " at " + str(playlist[2][3]).rjust(5)
+
     write_stat(s)
 
     # Outputs a complete hour by hour breakdown of games played
@@ -1634,8 +1666,6 @@ def parseStats(gt_entries, h2h_entries,halo_version):
             pass
 
     write_stat(s)   
-    
-    #print(str(max_rank_per_playlist_sorted))
     
     updateGlobalStatus("Done parsing.")
     output_file.close()
