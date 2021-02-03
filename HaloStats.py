@@ -30,7 +30,7 @@ cd C:\ Users\ Jesse\ Documents\ Halo2StatsData python HaloStats.py
 
 # Maybe this will help someone.
 readme_string = """
-Halo Stat Downloader 3.4.3.0 - Halo 2 and 3 downloads...
+Halo Stat Downloader 3.4.3.ₓ - Halo 2, 3, & Reach downloads...
 
 • Adjust directory if desired (likely have to)
 • Put gamertags in the boxes and click download stats (multithreaded)
@@ -55,8 +55,8 @@ Please reach out /u/nintendo9713 or @nintendo9713#8042 Discord for help.
 """
 
 # default root directory - can be changed in GUI
-#root_directory = os.path.expanduser("~")
-root_directory = "C:\\Users\\Jesse\\Documents\\Halo2StatsData\\TESTING"
+root_directory = os.path.expanduser("~")
+#root_directory = "C:\\Users\\Jesse\\Documents\\Halo2StatsData\\TESTING"
 
 #global status string
 status = "Nothing happening"
