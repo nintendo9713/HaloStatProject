@@ -55,8 +55,8 @@ Please reach out /u/nintendo9713 or @nintendo9713#8042 Discord for help.
 """
 
 # default root directory - can be changed in GUI
-root_directory = os.path.expanduser("~")
-#root_directory = "C:\\Users\\Jesse\\Documents\\Halo2StatsData\\TESTING"
+#root_directory = os.path.expanduser("~")
+root_directory = "C:\\Users\\Jesse\\Documents\\Halo2StatsData\\TESTING"
 
 #global status string
 status = "Nothing happening"
@@ -141,13 +141,16 @@ def threadButtonDownload(gt_entries, halo_version):
     global hR_page_threads
     
     global game_threads
-    
+
     # if we do have gamertags, let each one run in a thread for maximum power
     for gamertag in gamertags:
-    
+        # Why is this all of a sudden needed. kill me
+        if gamertag == "":
+            continue
+
         # Generic header used for verbose printing
         header = "[" + gamertag + "] "
-    
+
         # Create a directory for each gamertag
         try:  
             # Don't change global root directory - just make the folder for each one
@@ -169,10 +172,15 @@ def threadButtonDownload(gt_entries, halo_version):
             h3_cus_page_threads[gamertag] = []
             h3_gamertag_raw_data_dict[gamertag] = []
             
+
         if halo_version == "R":
             hR_page_threads[gamertag] = []
             hR_gamertag_id_dict[gamertag] = []
             hR_gamertag_raw_data_dict[gamertag] = []
+            t = threading.Thread(target=reachStatsDownload, args=(gamertag,))
+            t.start()
+            # Currently running this download first before the games
+            t.join()
             
         game_threads[gamertag] = []
             
@@ -189,7 +197,209 @@ def threadButtonDownload(gt_entries, halo_version):
         print(e)
         
 
+# My last hoo rah before dumping this
+def reachStatsDownload(gamertag):
+
+    global root_directory
+    stat_file_path = os.path.join(root_directory,gamertag,gamertag + "_stats.HR.txt").replace("\\","/")
     
+    # Used for Summary/Playlists
+    categories = ['Invasion','Arena','Competitive','Campaign','Firefight','Custom']
+    
+    # Oh boy, where to begin
+    url_hR = 'https://halo.bungie.net/Stats/Reach/default.aspx?player={}'.format(gamertag)
+    hR_data = requests.get(url_hR)
+    soup = BeautifulSoup(hR_data.content, 'html.parser')
+    # <ul class="alternatingList">
+          
+    # This bad boy gonna get FULL
+    s = ""
+    
+    # Overview #
+    s += "Stats Overview:\n---------\n"
+    try:
+        games_played = soup.find("span", attrs={"id":"ctl00_mainContent_gamesPlayedLabel"}).get_text()
+        last_played = soup.find("span", attrs={"id":"ctl00_mainContent_lastPlayedLabel"}).get_text()
+        armory_completion = soup.find("span", attrs={"id":"ctl00_mainContent_armorCompletionLabel"}).get_text()
+        daily_challenges = soup.find("span", attrs={"id":"ctl00_mainContent_dailyChallengesLabel"}).get_text()
+        weekly_challenges = soup.find("span", attrs={"id":"ctl00_mainContent_weeklyChallengesLabel"}).get_text()
+        matchmaking_mp_kills = soup.find("span", attrs={"id":"ctl00_mainContent_matchmakingKillsLabel"}).get_text()
+        covenant_killed = soup.find("span", attrs={"id":"ctl00_mainContent_covenantKilledLabel"}).get_text()
+        matchmaking_mp_medals = soup.find("span", attrs={"id":"ctl00_mainContent_medalsLabel"}).get_text()
+        player_since = soup.find("span", attrs={"id":"ctl00_mainContent_playerSinceLabel"}).get_text()
+    except Exception as e:
+        print(e)
+    
+    s += "\tGames Played          : " + games_played + '\n'
+    s += "\tLast Played           : " + last_played + '\n'
+    s += "\tArmory Completion     : " + armory_completion + '\n'
+    s += "\tDaily Challenges      : " + daily_challenges + '\n'
+    s += "\tWeekly Challenges     : " + weekly_challenges + '\n'
+    s += "\tMatchmaking MP Kills  : " + matchmaking_mp_kills + '\n'
+    s += "\tMatchmaking MP Medals : " + matchmaking_mp_medals + '\n'
+    s += "\tCovenant Killed       : " + covenant_killed + '\n'
+    s += "\tPlayer Since          : " + player_since + '\n'
+    s += '\n'
+    
+    
+    
+    # Summary #
+    s += "Stats Summary:\n--------\n"
+    
+    
+    # @Note - Games Played is points in SinglePlayer
+    summary_dict = {}
+    summary_dict["-"] = ['Games Played', 'Playtime', 'Kills', 'Deaths', 'Assists', 'K/D Ratio', 'Kills/Game', 'Deaths/Game', 'Kills/Hour', 'Deaths/hour', 'Medals', 'Medals/Game', 'Medals/Hour']
+    
+    # Iterate through each category in Summary
+    for i in range(1,7):
+        print("Getting summary stats for " + categories[i-1] + "...")
+        s += "\t" + categories[i-1] + ":\n"
+        url_hR = 'https://halo.bungie.net/stats/reach/careerstats/default.aspx?player={}&vc='.format(gamertag) + str(i)
+        hR_data = requests.get(url_hR)
+        soup = BeautifulSoup(hR_data.content, 'html.parser')
+        
+        games_played = soup.find("li", attrs={"class":"number"}).get_text()
+        playtime =  soup.find("span", attrs={"id":"ctl00_mainContent_playtimeLabel"}).get_text()
+        kills = soup.find("span", attrs={"id":"ctl00_mainContent_killsLabel"}).get_text()
+        deaths = soup.find("span", attrs={"id":"ctl00_mainContent_deathsLabel"}).get_text()
+        assists = soup.find("span", attrs={"id":"ctl00_mainContent_assistsLabel"}).get_text()
+        kd = soup.find("span", attrs={"id":"ctl00_mainContent_kdLabel"}).get_text()
+        kills_per_game = soup.find("span", attrs={"id":"ctl00_mainContent_kgLabel"}).get_text()
+        deaths_per_game = soup.find("span", attrs={"id":"ctl00_mainContent_dgLabel"}).get_text()
+        kills_per_hour = soup.find("span", attrs={"id":"ctl00_mainContent_khLabel"}).get_text()
+        deaths_per_hour = soup.find("span", attrs={"id":"ctl00_mainContent_dhLabel"}).get_text()
+        medals = soup.find("span", attrs={"id":"ctl00_mainContent_medalsLabel"}).get_text()
+        medals_per_game = soup.find("span", attrs={"id":"ctl00_mainContent_mgLabel"}).get_text()
+        medals_per_hour = soup.find("span", attrs={"id":"ctl00_mainContent_mhLabel"}).get_text()
+        
+        if categories[i-1] in ['Campaign', 'Firefight']:
+            t = "\t\t" + "Point Breakdown : "
+        else:
+            t = "\t\t" + "Games Played    : "
+        s += t + games_played + '\n'
+        s += "\t\t" + "Playtime        : " + playtime + '\n'
+        s += "\t\t" + "Kills           : " + kills + '\n'
+        s += "\t\t" + "Deaths          : " + deaths + '\n'
+        s += "\t\t" + "Assists         : " + assists + '\n'
+        s += "\t\t" + "Kill/Death      : " + kd + '\n'
+        s += "\t\t" + "Kills/Game      : " + kills_per_game + '\n'
+        s += "\t\t" + "Deaths/Game     : " + deaths_per_game + '\n'
+        s += "\t\t" + "Kills/Hour      : " + deaths_per_game + '\n'
+        s += "\t\t" + "Deaths/Hour     : " + kills_per_hour + '\n'
+        s += "\t\t" + "Medals          : " + deaths_per_hour + '\n'
+        s += "\t\t" + "Medals/Game     : " + medals + '\n'
+        s += "\t\t" + "Medals/Hour     : " + medals_per_game + '\n' 
+    s += '\n'
+    
+    # By Playlist #
+    s += "Stats by Playlist:\n--------\n"
+    #playlist_dict = {}
+    #playlist_dict["-"] = ['Playlist', 'Games Played', 'Playtime', 'Kills', 'Deaths', 'K/D Ratio', 'Assist']
+    
+    print("By Playlist...")
+    # Iterate through each category in Summary
+    for i in range(1,4):
+        print("Getting playlist stats for " + categories[i-1] + "...")
+        s += "\t" + categories[i-1] + ":\n"
+        url_hR = 'https://halo.bungie.net/Stats/Reach/CareerStats/playlists.aspx?player={}&vc='.format(gamertag) + str(i)
+        hR_data = requests.get(url_hR)
+        soup = BeautifulSoup(hR_data.content, 'html.parser')
+        
+        #playlists = soup.find_all("strong")
+        playlists = [h4.find('strong') for h4 in soup.findAll('h4')]
+        pl_info = soup.find_all("div", {"class":"info"})
+        games_played = soup.find_all("p", {"class":"totalPoints"})
+        
+        playlists = [x.get_text() for x in playlists if x is not None]
+        pl_info = [x.get_text().replace('\n\n\n','').replace('\n\n','') for x in pl_info if x is not None]
+        pl_info[:] = [x.split('Games')[0] for x in pl_info]
+        games_played = [x.get_text() for x in games_played if x is not None]
+        games_played = [x for x in games_played if x is not ""]
+        
+        local_stats = zip(playlists, pl_info, games_played)
+
+        print(categories[i-1] + ':')
+        for p,i,t in local_stats:
+            s += '\t\t' + p + ":\n"
+            s += "\t\t\tGames Played: " + t.ljust(6) + '\n'
+            for q in i.split('\n')[:-1]:
+                s += "\t\t\t" + q + '\n'
+            s += '\t\t\t' + i.split('\n')[-1][:7] + ":" + i.split('\n')[-1][7:] + '\n'
+            s += '\n'
+    s += '\n'
+    
+    # By Map
+    s += "Stats by Map:\n-------------\n"
+    # Iterate through each category in Maps
+    for i in range(1,7):
+        if categories[i-1] in ['Campaign', 'Firefight']:
+            continue
+        print("Getting playlist stats for " + categories[i-1] + "...")
+        s += "\t" + categories[i-1] + ":\n"
+        url_hR = 'https://halo.bungie.net/stats/reach/careerstats/maps.aspx?player={}&vc='.format(gamertag) + str(i)
+        hR_data = requests.get(url_hR)
+        soup = BeautifulSoup(hR_data.content, 'html.parser')
+    
+        #maps = soup.find_all("strong")
+        maps = [h4.find('strong') for h4 in soup.findAll('h4')]
+        map_info = soup.find_all("div", {"class":"info"})
+        games_played = soup.find_all("p", {"class":"totalPoints"})
+        
+        maps = [x.get_text() for x in maps if x is not None]
+        map_info = [x.get_text().replace('\n\n\n','').replace('\n\n','') for x in map_info if x is not None]
+        map_info[:] = [x.split('Games')[0] for x in map_info]
+        games_played = [x.get_text() for x in games_played if x is not None]
+        games_played = [x for x in games_played if x is not ""]
+        
+        local_stats = zip(maps, map_info, games_played)
+
+        print(categories[i-1] + ':')
+        for p,i,t in local_stats:
+            s += '\t\t' + p + ":\n"
+            s += "\t\t\tGames Played: " + t.ljust(6) + '\n'
+            for q in i.split('\n'):
+                s += "\t\t\t" + q + '\n'
+            s += '\n'
+    
+    # Weapons
+    s += "Stats by Weapon:\n----------\n"
+    
+    for i in range(1,7):
+        print("Getting weapon stats for " + categories[i-1] + "...")
+        s += "\t" + categories[i-1] + ":\n"
+        url_hR = 'https://halo.bungie.net/stats/reach/careerstats/weapons.aspx?player={}&vc='.format(gamertag) + str(i)
+        hR_data = requests.get(url_hR)
+        soup = BeautifulSoup(hR_data.content, 'html.parser')
+             
+        weapons = soup.find_all("td", {"class":"weapon"})
+        weapons = [x.get_text().replace('\n\n\n\n\n\n\n\n\n\n\n','').replace('\n\n\n\n\n\n','').split('\n')[0] for x in weapons if x is not None]    
+        kills_on = soup.find_all("td", {"class":"kills on"})
+        kills_on = [x.get_text().replace('\n','') for x in kills_on if x is not None]
+        deaths = soup.find_all("td", {"class":"deaths"})
+        deaths = [x.get_text().replace('\n','') for x in deaths if x is not None]
+        spread = soup.find_all("td", {"class":"spread"})
+        spread = [x.get_text().replace('\n','') for x in spread if x is not None]
+        KD = soup.find_all("td", {"class":"KD"})
+        KD = [x.get_text().replace('\n','') for x in KD if x is not None]
+        KH = soup.find_all("td", {"class":"KH"})
+        KH = [x.get_text().replace('\n','') for x in KH if x is not None]
+        DH = soup.find_all("td", {"class":"DH"})
+        DH = [x.get_text().replace('\n','') for x in DH if x is not None]
+        
+        local_stats = zip(weapons,kills_on,deaths,spread,KD,KH,DH)
+        
+        s += "\t\t" + "-".ljust(33) + "Kills".ljust(13) + "Deaths".ljust(13) + "Spread".ljust(10) + "K/D Ratio".ljust(10) + "Kills/Hour".ljust(12) + "Deaths/ Hour".ljust(10) + '\n'
+        
+        for w,k,d,o,k1,k2,d1 in local_stats:
+            s += '\t\t' + w.ljust(33) + k.ljust(13) + d.ljust(13) + o.ljust(10) + k1.ljust(10) + k2.ljust(12) + d1.ljust(10) + '\n'
+
+        
+    # Final Output for now...To be appended in parseReachStats
+    with open(stat_file_path, "w", encoding='utf-8') as raw_output_file:
+        updateGlobalStatus("Writing to " + stat_file_path + ".")
+        raw_output_file.write(s)
+            
 
 # Downloads the each page of Halo 2, 3 customs, and 3 matchmaking - where it should generate 25 game ids - except for the final page
 def downloadStatPage(gamertag, page_number, halo_version):
@@ -200,11 +410,15 @@ def downloadStatPage(gamertag, page_number, halo_version):
     # Using the root directory to save specific files
     global root_directory
     pages_file_path = os.path.join(root_directory,gamertag,gamertag + "_saved_pages.H" + halo_version[0] + ".txt").replace("\\","/")
-    #game_ids_file_path = os.path.join(root_directory,gamertag + "_game_ids.H" + halo_version + ".txt").replace("\\","/") 
+    
+    if halo_version == "R":
+        reach_rss_feed_path = os.path.join(root_directory,gamertag,gamertag + "_rss_feed.H" + halo_version[0] + ".txt").replace("\\","/")
+        reach_rss_raw_path = os.path.join(root_directory,gamertag,gamertag + "_rss_raw_data.H" + halo_version[0] + ".txt").replace("\\","/")
     
     # Declare the gamertag id dictionaries to be appended
     global h2_gamertag_id_dict
     global h3_gamertag_id_dict
+    global hR_gamertag_id_dict
 
     # Try a certain amount of times before giving up
     global attempt_limit
@@ -239,23 +453,56 @@ def downloadStatPage(gamertag, page_number, halo_version):
                 # But just in case, here's an assertion it was extracted correctly
                 assert p == str(page_number), "Rare error where page 1 loads"
            
+            rss_raw_data = []
             if halo_version == "R":
-                url = 'https://halo.bungie.net/stats/reach/playergamehistory.aspx?vc=0&player={}&page={}'.format(gamertag,page_number)
+                # https://halo.bungie.net/stats/reach/rssgamehistory.ashx?vc=0&player=Agnt%20007&page=2
+                url = 'https://halo.bungie.net/stats/reach/rssgamehistory.ashx?vc=0&player={}&page={}'.format(gamertag,page_number)
+                #url = 'https://halo.bungie.net/stats/reach/playergamehistory.aspx?vc=0&player={}&page={}'.format(gamertag,page_number)
                 page_data = requests.get(url)
                 page_data_text = page_data.text
-                soup = BeautifulSoup(page_data.content, 'html.parser')
+                soup = BeautifulSoup(page_data.content, 'lxml')
+                #print(str(page_number) + str(soup) + '\n\n')
+                game_links = soup.find_all('guid')
                 
-                #links = soup.find('tr ', {'class':"rgCurrentPage"})
-                for i in range(0,25):
-                    try:
-                        s = soup.find('tr', {'id':'ctl00_mainContent_recentgames_ctl00__'+str(i)})
-                        #print(str(s) + '\n\n')
-                        t = re.findall('gameid=(.*)&amp', str(s))
-                        t = [i.split('&')[0] for i in t]
-                        game_ids.append(t[0])
-                    except Exception as e:
-                        #print(e)
-                        pass
+                for g in game_links:
+                    # do. not. care.
+                    game_ids.append(str(g).split('=')[1].split('&')[0])
+                    
+                
+                assert len(game_ids) > 1, "No Game IDs found, giving it another shot."
+                    
+                # Time for big brain. Break this RSS feed into a LIST. Everything. a. LIST.
+                rss = soup.find_all('item')                
+                
+                for idx,item in enumerate(rss):
+                    children = item.find_all(recursive=False)
+                    
+                    rss_raw_data.append([str(game_links[idx]).split('=')[1].split('&')[0], 
+                        [children[0].text, 
+                        children[3].text[0:3],
+                        children[3].text[5:16], 
+                        children[3].text[17:], 
+                        children[4].text.split(',')[0], 
+                        children[5].text, 
+                        children[6].text, 
+                        children[7].text, 
+                        children[8].text, 
+                        children[9].text]])
+                    
+                    # rss_raw_data format I guess
+                    # [gameid]|[title, day, date, time, desc, place, score, spread, map, playlist]
+                    '''
+                    print("GameID: " + str(game_links[idx]).split('=')[1].split('&')[0])
+                    print("Title: " + children[0].text)
+                    print("Date: " + children[3].text[:16])
+                    print("Time: " + children[3].text[17:])
+                    print("Desc: " + children[4].text.split(',')[0])
+                    print("Place: " + children[5].text)
+                    print("Score: " + children[6].text)
+                    print("Spread: " + children[7].text)
+                    print("Map: " + children[8].text)
+                    print("Playlist: " + children[9].text)
+                    '''
                     
             print("Page # " + str(page_number) + " got " + str(len(game_ids)) + " game ids.")
             # For safe measure, just lock when appending
@@ -270,9 +517,17 @@ def downloadStatPage(gamertag, page_number, halo_version):
                         h3_gamertag_id_dict[gamertag].append(game_id)
                     if halo_version[0] == "R":
                         hR_gamertag_id_dict[gamertag].append(game_id)
-                        
+                        with open(reach_rss_feed_path, 'a', encoding='utf-8') as f:
+                            for r in rss:
+                                f.write(str(r).replace('\t','') + '\n\n')
+                                #f.write(r.prettify()  + '\n\n')
+                if halo_version == "R":
+                    with open(reach_rss_raw_path, 'a', encoding='utf-8') as y:
+                        for r in rss_raw_data:
+                            y.write('[' + str(r[0]) + ']|' + str(r[1]) +'\n')
+                
                 # Open the file, and dump all 25 into it
-                with open(pages_file_path,'a') as p:
+                with open(pages_file_path,'a', encoding='utf-8') as p:
                     # Saves the page so it doesn't EVER re-download again.
                     if halo_version == "2":
                         p.write(str(page_number) + "\n")   
@@ -286,9 +541,9 @@ def downloadStatPage(gamertag, page_number, halo_version):
                     
         # Could be 404, temporarily purged, or even the elusive 'load page 1' even though you requested a different page
         except Exception as e:
-            print(e)
             # Print the bad URLs with fixed spacing for easier clicking to manually test
             print(header.ljust(19) + "Page # " + str(page_number) + " for " + halo_version + " failed attempt # " + str(attempt+1) + " of " + str(attempt_limit) + "\n\t" + str(url).replace(" ", "%20"))
+            print('-->' + str(e))
             # Wait to not burden the site with too many requests
             time.sleep(1) 
             continue
@@ -306,104 +561,169 @@ def downloadGamePage(gamertag,ids,thread_number,total_threads,halo_version):
     header = "[" + gamertag + "] "
     
     global bad_requests
+    global attempt_limit
+    global purged_games
 
+    raw_rss_feed = []
+    raw_rss_dict = {}
+    if halo_version == "R":
+        raw_rss_feed_path = os.path.join(root_directory,gamertag,gamertag + "_rss_raw_data.HR.txt").replace("\\","/")
+        # Have a local copy to parse
+        raw_rss_feed = open(raw_rss_feed_path, 'r').readlines()
+        #[742842900]|['slayer', 'Sun, 07 Aug 2011', '04:00:11 GMT', 'slayer on Sword Base', '2nd', '31', '+0', 'Sword Base', 'Team Slayer']
+        for line in raw_rss_feed:
+            try:
+                raw_rss_dict[line.split('|')[0][1:-1]] = ast.literal_eval(line.split('|')[1])
+            except:
+                print("Line: " + line)
+                print(" ^ Not included. didn't like.")
+        
     # Keep iterating through ids until they don't error out...
     #@TODO ERROR CHECK ASSUME BAD
-    #while(ids):
-    for attempt in range(attempt_limit):
-        try:
-            # For every game_id, parse for available data
-            gameid = ""
-            for idx,game_id in enumerate(ids):
-                # Strip of [] - I think?
-                game_id = game_id.strip() 
+    # [id] = fail#
+    id_fail_dict = {}
+    
+    while(ids):
+        for game_id in ids:
+            # Strip of [] - I think?
+            game_id = game_id.strip() 
+            
+            if halo_version != "R":
+                # Generic request page data
+                #game = 'https://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid={}&player={}'.format(game_id, gamertag)
+                #game = 'https://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid={}'.format(game_id)
+                game = 'https://halo.bungie.net/Stats/GameStatsHalo' + halo_version + '.aspx?gameid={}'.format(game_id)
+                game_data = requests.get(game)
+                game_text = game_data.text  
+                soup = BeautifulSoup(game_data.content, 'html.parser')
                 
-                if halo_version != "R":
-                    # Generic request page data
-                    #game = 'https://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid={}&player={}'.format(game_id, gamertag)
-                    #game = 'https://halo.bungie.net/Stats/GameStatsHalo2.aspx?gameid={}'.format(game_id)
-                    game = 'https://halo.bungie.net/Stats/GameStatsHalo' + halo_version + '.aspx?gameid={}'.format(game_id)
-                    game_data = requests.get(game)
-                    game_text = game_data.text  
-                    soup = BeautifulSoup(game_data.content, 'html.parser')
+                try:
+                    # Populate the summary here, basic info about the match
+                    summary = soup.find("ul", {"class":"summary"})
+                    summary = summary.get_text("|",strip=True).split('|')
+                    # Since 'Length' was purged from Bungie, replace with 'Ranked' or 'Unranked'
                     
-                    try:
-                        # Populate the summary here, basic info about the match
-                        summary = soup.find("ul", {"class":"summary"})
-                        summary = summary.get_text("|",strip=True).split('|')
-                        # Since 'Length' was purged from Bungie, replace with 'Ranked' or 'Unranked'
-                        
-                        # If Halo 2, just search for ExpBar
-                        if halo_version == "2":
-                            if (soup.find("div", {"class": "ExpBarText"}) == None):
-                                summary[3] = 'Unranked'
-                            else:
-                                summary[3] = 'Ranked'
-                        # If Halo 3, search for span# - if all empty, then unranked
+                    # If Halo 2, just search for ExpBar
+                    if halo_version == "2":
+                        if (soup.find("div", {"class": "ExpBarText"}) == None):
+                            summary[3] = 'Unranked'
                         else:
-                            #ranked = soup.find_all("span", {"class": "num"})
-                            ranked = soup.find_all("span", attrs={"class":"num"})
-                            # if all are empty, then no ranks found
-                            if all(x.text == "" for x in ranked):
-                                summary[3] = 'Unranked'
-                            else:
-                                summary[3] = 'Ranked'
+                            summary[3] = 'Ranked'
+                    # If Halo 3, search for span# - if all empty, then unranked
+                    else:
+                        #ranked = soup.find_all("span", {"class": "num"})
+                        ranked = soup.find_all("span", attrs={"class":"num"})
+                        # if all are empty, then no ranks found
+                        if all(x.text == "" for x in ranked):
+                            summary[3] = 'Unranked'
+                        else:
+                            summary[3] = 'Ranked'
 
-                    # For any number of reasons, can fail - just push to bottom
-                    except:
-                        print(header.ljust(19) + "Got a bad request at " + ("[" + game_id + "]").rjust(12) + "...putting it back at bottom of list to try later...")
+                # For any number of reasons, can fail - just push to bottom
+                except:
+                    print(header.ljust(19) + "Got a bad request at " + ("[" + game_id + "]").rjust(12) + "...putting it back at bottom of list to try later...")
+                    
+                    # Increment failure, and pop if failed too much
+                    if game_id in id_fail_dict.keys():
+                        id_fail_dict[game_id] = id_fail_dict[game_id] + 1
+                        if id_fail_dict[game_id] > attempt_limit:
+                            ids.remove(game_id)
+                    else:
+                        # Set initial failure to 1
+                        id_fail_dict[game_id] = 1
                         
-                        # Keeping track of how many bad requests we were hit with 
-                        with threading.Lock():
-                            bad_requests = bad_requests + 1
-                        continue
-                    
-                    # This points to the carnage report table
-                    carnage_report = soup.find_all("div", {"id":"ctl00_mainContent_bnetpgd_pnlKills"})
-                    # Apply some strips and splits
-                    carnage_report = carnage_report[0].get_text("|",strip=True).split('|')
-                    
-                else:
-                    #<div class="teamTableViews">
-                    game = 'https://halo.bungie.net/Stats/Reach/GameStats.aspx?gameid={}'.format(game_id)
-                    game_data = requests.get(game)
-                    game_text = game_data.text  
-                    soup = BeautifulSoup(game_data.content, 'html.parser')
-                    
-                    summary = soup.findall("div", {"class":"teamTableViews"})
-                    red_team = summary[0].get_text("|",strip=True).split('|')
-                    blue_team = summary[1].get_text("|",strip=True).split('|')
-                    summary = red_team + "|" + blue_team
-                    carnage_report = ""
-                    
+                    # Keeping track of how many bad requests we were hit with 
+                    with threading.Lock():
+                        bad_requests = bad_requests + 1
+                    continue
                 
-                global h2_gamertag_raw_data_dict
-                global h3_gamertag_raw_data_dict
-                # Write this structure - no need for "[]" since the list will print them 
-                d = "[" + str(game_id) + "]|" + str(summary) + "|" + str(carnage_report)
+                # This points to the carnage report table
+                carnage_report = soup.find_all("div", {"id":"ctl00_mainContent_bnetpgd_pnlKills"})
+                # Apply some strips and splits
+                carnage_report = carnage_report[0].get_text("|",strip=True).split('|')
                 
-                if halo_version == "2":
-                    h2_gamertag_raw_data_dict[gamertag].append(d)
-                if halo_version == "3":
-                    h3_gamertag_raw_data_dict[gamertag].append(d)
-                if halo_version == "R":
-                    hR_gamertag_raw_data_dict[gamertag].append(d)
+            else:
+                # Reach is going to be differnt...so deal with it.  Less than 10 days out.
+                #[304680]|['Slayer on Coagulation', 'Playlist - Arranged Game', '11/9/2004, 3:47 PM PST', 'Unranked']|['Players',
+                #[gameid]|['Gametype on Map', 'Playlist - ????', 'date, time', length]|[player1,player2,]
+                #<div class="teamTableViews">
+                game = 'https://halo.bungie.net/Stats/Reach/GameStats.aspx?gameid={}'.format(game_id)
+                game_data = requests.get(game)
+                game_text = game_data.text  
+                soup = BeautifulSoup(game_data.content, 'html.parser')
+                
+                try:
+                    # Acquire summary for Reach
+                    #   Part 1 from the actual web page
+                    summary_soup = soup.find("div", {"class":"gameDetails"})
+                    date = summary_soup.find("p", {"class":"time"}).text.split(" ")[0]
+                    time = summary_soup.find("p", {"class":"time"}).text.split(" ")[1]
+                    length = summary_soup.find("p", {"class":"time"}).text.split("|")[1][1:]
+                    #   Part 2 from the raw RSS data
+                    game_type = raw_rss_dict[game_id][0]
+                    map_played = raw_rss_dict[game_id][8]
+                    playlist = raw_rss_dict[game_id][9]
                     
-                # If it made it this far, we're good.
-                #ids.remove(game_id)
-                print(header.ljust(19) + "Another game down, " + str(len(ids)-idx) + " left in thread #" + str(thread_number) + " of " + str(total_threads))
+                    summary = [game_type, map_played, playlist, date, time, length]
+                    
+                    players = []
+                    players_raw = soup.find_all("div", {"class":"glowBox popOut po_playerInfo"})
+                    ranks = []
+                    ranks_raw = soup.find_all("div", {"title":True})
+                    for r in ranks_raw:
+                        ranks.append(str(r['title']))
+                    for p in players_raw:
+                        players.append(p.find("h4").text)
+                        
+                    pr_zip = zip(players,ranks)
+                except:
+                    print(header.ljust(19) + "Got a bad request at " + ("[" + game_id + "]").rjust(12) + "...putting it back at bottom of list to try later...")
+                    
+                    # Increment failure...
+                    if game_id in id_fail_dict.keys():
+                        id_fail_dict[game_id] = id_fail_dict[game_id] + 1
+                        # ...and pop if failed too much
+                        if id_fail_dict[game_id] > attempt_limit:
+                            ids.remove(game_id)
+                            with threading.Lock():
+                                # Consider purged?
+                                purged_games = purged_games + 1
+                    else:
+                        # Set initial failure to 1
+                        id_fail_dict[game_id] = 1
+                        
+                    # Keeping track of how many bad requests we were hit with 
+                    with threading.Lock():
+                        bad_requests = bad_requests + 1
+                    continue
                 
-        except:
-            print(header.ljust(19) + "Something went wrong with Game ID " + game_id)
-        else:
-            break
-    else:
-        print(header.ljust(19) + "Not all games were found.  Missing: " + str(ids))
-        # These games might be purged, just try again later. No need to save what's missing - a comparison between the raw_data and game_ids will resolve this.
-        global purged_games
-        with threading.Lock():
-            purged_games = purged_games + len(ids)
-  
+                # Carnage Report for Reach is just to farm the player dictionary
+                carnage_report = "["
+                for p,r in pr_zip:
+                    carnage_report += "'" + p + ":" + r + "',"
+                # Overwrite last comma with closing bracket. Should be a list
+                carnage_report = carnage_report[:-1] + "]"
+                
+            
+            global h2_gamertag_raw_data_dict
+            global h3_gamertag_raw_data_dict
+            global hR_gamertag_raw_data_dict
+            # Write this structure - no need for "[]" since the list will print them 
+            d = "[" + str(game_id) + "]|" + str(summary) + "|" + str(carnage_report)
+
+            
+            if halo_version == "2":
+                h2_gamertag_raw_data_dict[gamertag].append(d)
+            if halo_version == "3":
+                h3_gamertag_raw_data_dict[gamertag].append(d)
+            if halo_version == "R":
+                hR_gamertag_raw_data_dict[gamertag].append(d)
+                
+            # If it made it this far, we're good.
+            ids.remove(game_id)
+            print(header.ljust(19) + "Another game down, " + str(len(ids)) + " left in thread #" + str(thread_number) + " of " + str(total_threads))
+                
+
     global chunks_remaining       
     with threading.Lock():
         chunks_remaining = chunks_remaining - 1
@@ -420,13 +740,14 @@ def downloadStats(gamertag,halo_version):
         # Example ~/myGamertag/myGamertag_raw_data.H2.txt 
         raw_data_file_path = os.path.join(root_directory,gamertag,gamertag + "_raw_data.H" + halo_version[0] + ".txt").replace("\\","/") 
         game_ids_file_path = os.path.join(root_directory,gamertag,gamertag + "_game_ids.H" + halo_version[0] + ".txt").replace("\\","/") 
+        halo_3_career_path = os.path.join(root_directory,gamertag,gamertag + "_career_stats.H3.txt").replace("\\","/")
         pages_file_path = os.path.join(root_directory,gamertag,gamertag + "_saved_pages.H" + halo_version[0] + ".txt").replace("\\","/")
         
         if os.path.exists(raw_data_file_path):
             print(header.ljust(19) + "Raw data text file already exists.  Will be appending to it with any new data.")
         else:
             # 'touch' the file to make sure it's there when needed
-            open(raw_data_file_path,'w').close()
+            open(raw_data_file_path,'w', encoding='utf-8').close()
             
         print("Writing to " + raw_data_file_path)
 
@@ -511,7 +832,7 @@ def downloadStats(gamertag,halo_version):
         # Make sure we don't query pages we already got 
         with threading.Lock():
             if os.path.isfile(pages_file_path):
-                with open(pages_file_path,'r') as f:
+                with open(pages_file_path,'r', encoding='utf-8') as f:
                     pages_downloaded = f.readlines()
             # Remove new line char
             pages_downloaded = [x.strip() for x in pages_downloaded] 
@@ -626,7 +947,7 @@ def downloadStats(gamertag,halo_version):
         
        
         # Write any new Game IDs to file - APPEND
-        with open(game_ids_file_path, 'a') as game_id_file:
+        with open(game_ids_file_path, 'a', encoding='utf-8') as game_id_file:
             if halo_version == "2":
                 for i in h2_gamertag_id_dict[gamertag]:
                     game_id_file.write(i+'\n')
@@ -685,9 +1006,14 @@ def downloadStats(gamertag,halo_version):
             h3_gamertag_id_dict[gamertag] = list(dict.fromkeys(h3_gamertag_id_dict[gamertag]))
             # Sort it out
             h3_gamertag_id_dict[gamertag].sort(key = int)
+        if halo_version == "R":            
+            # Remove duplicates, deprecated methods created duplicates and I'm just leaving it
+            hR_gamertag_id_dict[gamertag] = list(dict.fromkeys(hR_gamertag_id_dict[gamertag]))
+            # Sort it out
+            hR_gamertag_id_dict[gamertag].sort(key = int)
             
         updateGlobalStatus(header.ljust(19) + "Processing games...")
-
+        
         # yields chunks of game_ids to work with
         global games_per_chunk
         chunks = 0
@@ -727,36 +1053,38 @@ def downloadStats(gamertag,halo_version):
             h2_gamertag_raw_data_dict[gamertag].sort(key=lambda l: int(l.split("|")[0][1:-1]),reverse=False)
         if halo_version == "3":
             h3_gamertag_raw_data_dict[gamertag].sort(key=lambda l: int(l.split("|")[0][1:-1]),reverse=False)
+        if halo_version == "R":
+            hR_gamertag_raw_data_dict[gamertag].sort(key=lambda l: int(l.split("|")[0][1:-1]),reverse=False)
         
         
         # Make sure there's even a list to process - and if so, write the list with an extra new line at end
         if halo_version == "2":
             if h2_gamertag_raw_data_dict[gamertag]:
-                with open(raw_data_file_path, "a") as raw_output_file:
+                with open(raw_data_file_path, "a", encoding='utf-8') as raw_output_file:
                     updateGlobalStatus("Writing to " + raw_data_file_path + ".")
                     h2_gamertag_raw_data_dict[gamertag] = list(dict.fromkeys(h2_gamertag_raw_data_dict[gamertag]))
                     raw_output_file.write("\n".join(h2_gamertag_raw_data_dict[gamertag]))
-                    raw_output_file.write("\n")
+                    #raw_output_file.write("\n")
                 
         if halo_version == "3":
             if h3_gamertag_raw_data_dict[gamertag]:
-                with open(raw_data_file_path, "a") as raw_output_file:
+                with open(raw_data_file_path, "a", encoding='utf-8') as raw_output_file:
                     updateGlobalStatus("Writing to " + raw_data_file_path + ".")
                     h3_gamertag_raw_data_dict[gamertag] = list(dict.fromkeys(h3_gamertag_raw_data_dict[gamertag]))
                     raw_output_file.write("\n".join(h3_gamertag_raw_data_dict[gamertag]))
-                    raw_output_file.write("\n")
+                    #raw_output_file.write("\n")
                 
         if halo_version == "R":
             if hR_gamertag_raw_data_dict[gamertag]:
-                with open(raw_data_file_path, "a") as raw_output_file:
+                with open(raw_data_file_path, "a", encoding='utf-8') as raw_output_file:
                     updateGlobalStatus("Writing to " + raw_data_file_path + ".")
                     hR_gamertag_raw_data_dict[gamertag] = list(dict.fromkeys(hR_gamertag_raw_data_dict[gamertag]))
                     raw_output_file.write("\n".join(hR_gamertag_raw_data_dict[gamertag]))
-                    raw_output_file.write("\n")
+                    #raw_output_file.write("\n")
                 
         
         # Sort the file after because I can't stand being unorganized
-        with open(raw_data_file_path, "r+") as raw_output_file:
+        with open(raw_data_file_path, "r+", encoding='utf-8') as raw_output_file:
             contents = raw_output_file.read().splitlines()
             # In case new lines are present
             contents = list(filter(None, contents))
@@ -764,16 +1092,134 @@ def downloadStats(gamertag,halo_version):
             contents.sort(key=lambda l: int(l.split("|")[0][1:-1]),reverse=False)
             raw_output_file.seek(0)
             raw_output_file.truncate()
-            raw_output_file.write("\n".join(contents))  
-            raw_output_file.write("\n")            
+            #raw_output_file.write("\n".join(contents))  
+            for c in contents:
+                try:
+                    raw_output_file.write(c + '\n')
+                except Exception as e:                
+                    print(e)
+                             
+        '''
+        if halo_version == "3":
+            s = ""
+            updateGlobalStatus(header.ljust(19) + "Downloading Halo 3 Career Stats page.")
+            for attempt in range(0,10):
+                try:
+                    url = 'http://halo.bungie.net/stats/halo3/careerstats.aspx?player={}'.format(gamertag)
+                    career_data = requests.get(url)
+                    soup = BeautifulSoup(career_data.content, 'html.parser')
+                    
+                    card = soup.find("div ", attrs={"class":"compGamerCardInfo"})
+                    print(card)
+                    return
+                    wrap = soup.find_all("table ", attrs={"class":"statTable"})
+                    weap = soup.find_all("div ", attrs={"class":"weapon_container"})
+                    medals = soup.find_all("div ", attrs={"class":"medalBlock"})
+                    
+                    card = [x.get_text() for x in card if x is not None]
+                    wrap = [x.get_text() for x in wrap if x is not None]
+                    weap = [x.get_text() for x in weap if x is not None]
+                    medals = [x.get_text() for x in medals if x is not None]
+                    
+                    if not card or not wrap:
+                        with open(halo_3_career_path, "w", encoding='utf-8') as h3_career_file:
+                            h3_career_file.write(str(soup))
+                        return
+                        raise ValueError('Probably a 404?')
+                        
+                    print(card)
+                    print(wrap)
+                    print(weap)
+                    print(medals)
+                    
+                    for c in card:
+                        s += (c)
+                    for w in wrap:
+                        s += (w)
+                    for w in weap:
+                        s += (w)
+                    for m in medals:
+                        s += (m)
 
+                except Exception as e:
+                    print(e)
+                else:
+                    break
+            else:
+                print("Nothing found on this page: " + url.replace(' ','%20'))
+                    
+            with open(halo_3_career_path, "w", encoding='utf-8') as h3_career_file:
+                h3_career_file.write(s)
+        '''
+        
         updateGlobalStatus(header.ljust(19) + "Done downloading games. " + str(bad_requests) + " bad requests that had to be re-downloaded. Ready to parse.")
 
 # Launch separate thread so GUI doesn't freeze
 def threadButtonParse(gt_entries,h2h_entries,halo_version):
-    threading.Thread(target=parseStats, args=(gt_entries,h2h_entries,halo_version,)).start()
+    if halo_version == "R":
+        threading.Thread(target=parseReachStats, args=(gt_entries,)).start()
+    else:
+        threading.Thread(target=parseStats, args=(gt_entries,h2h_entries,halo_version,)).start()
     
+def parseReachStats(gt_entries): 
+   
+    global root_directory
+    gamertags = [e.get() for e in gt_entries]
+    
+    s = "Parsing " + ','.join(gt for gt in gamertags if gt.strip()) + " Reach stats... (shouldn't take more than 5 seconds)"
+    updateGlobalStatus(s)
+    
+    gamertags = list(filter(None, gamertags))
+    
+    if not gamertags[0]:
+        updateGlobalStatus("No gamertags entered. Try again.")
+        return
+        
+    reach_player_dict = {}
+    
+    for gamertag in gamertags:
+    
+        # File to append
+        stat_file_path = os.path.join(root_directory,gamertag,gamertag + "_stats.HR.txt").replace("\\","/")
+        raw_file_path  = os.path.join(root_directory,gamertag,gamertag + "_raw_data.HR.txt").replace("\\","/")
+  
+        with open(raw_file_path,'r', encoding='utf-8') as f:
+            games = f.readlines()
+            
+        games = [g.split('|')[2].replace('\n','') for g in games]
+        
+        games = [ast.literal_eval(g) for g in games]
+        
+        
+        for g in games:
+            for i in g:
+                gt = i.split(':')[0]
+                if gt in gamertags:
+                    continue
+                if gt not in reach_player_dict.keys():
+                    reach_player_dict[gt] = 1
+                else:
+                    reach_player_dict[gt] = reach_player_dict[gt] + 1
+                
+        sorted_player_list = sorted(reach_player_dict.items(), key = lambda x:x[1], reverse=True)
+               
+         # Most Players played w/ preview
+        s = ""
+        s += "\n"
+        s += "\nMost Played With:\n------------------------\n"
+        i = 0
+        while (sorted_player_list[i][1] > 5):
+            try:
+                s +="  " + sorted_player_list[i][0].ljust(18) + ": " + str(sorted_player_list[i][1]).rjust(5) + "\n"
+                i = i + 1
+            except:
+                pass
 
+        with open(stat_file_path, 'a', ) as f:
+            f.write('\n\n' + s)
+    s = "Done parsing."
+    updateGlobalStatus(s)
+    
 def parseStats(gt_entries, h2h_entries,halo_version):
 
     global root_directory
@@ -805,8 +1251,8 @@ def parseStats(gt_entries, h2h_entries,halo_version):
         
     ascii_stat_page_name = os.path.join(root_directory,gamertag[0],gamertag[0] + "_stat_tables.H" + halo_version + ".txt").replace("\\","/")
         
-    output_file = open(output_file_name, "w")
-    ascii_stat_file = open(ascii_stat_page_name, "w")
+    output_file = open(output_file_name, "w", encoding='utf-8')
+    ascii_stat_file = open(ascii_stat_page_name, "w", encoding='utf-8')
     
     for gt in gamertag:
         # Writes the URLs for each gamertag at the top of the file
@@ -1131,7 +1577,7 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     
     for f in raw_data_files:
         try:
-            with open(f) as infile:
+            with open(f, encoding='utf-8') as infile:
                 local_stats = infile.readlines()
             # Strips all new line characters
             local_stats = [x.strip() for x in local_stats]
@@ -1492,7 +1938,7 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     # Parses the time dictionary for highest value and outputs the time and count for most games played
     s = ""
     s += "\n"
-    s += "Most games played at this hour:\n-------------------------------\n"
+    s += "Most games played at this hour: (CST)\n-------------------------------------\n"
     most_hour_played = key_with_max_value(time_dictionary)
     s += most_hour_played + " : " + str(time_dictionary[most_hour_played]) + " games played at this hour"
     write_stat(s)
@@ -1578,7 +2024,7 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     
     # Print out in sorted order the max rank and earning game
     for playlist in max_rank:
-        s += "\n" + str(playlist[0].rjust(16)) + "  | Highest Rank Earned : " + str(playlist[1]).rjust(3) + " | GameID : " + str(playlist[2][1]).rjust(10) + " | Date : " + str(playlist[2][2]).rjust(10) + " at " + str(playlist[2][3]).rjust(5)
+        s += "\n" + str(playlist[0].rjust(19)) + "  | Highest Rank Earned : " + str(playlist[1]).rjust(3) + " | GameID : " + str(playlist[2][1]).rjust(10) + " | Date : " + str(playlist[2][2]).rjust(10) + " at " + str(playlist[2][3]).rjust(5)
 
     write_stat(s)
 
@@ -1658,7 +2104,7 @@ def parseStats(gt_entries, h2h_entries,halo_version):
     s += "\n"
     s += "\nMost Played With:\n------------------------\n"
     i = 0
-    while (sorted_player_list[i][1] > 15):
+    while (sorted_player_list[i][1] > 5):
         try:
             s +="  " + sorted_player_list[i][0].ljust(18) + ": " + str(sorted_player_list[i][1]).rjust(5) + "\n"
             i = i + 1
@@ -1728,7 +2174,6 @@ class App(Frame):
         self.download_stats = Button(textvariable=self.generate_text, font = ('Sans','10','bold'), command=lambda: threadButtonDownload(self.gamertag_entry,"R"))
         self.download_stats.grid(row=5,rowspan=2,column=2,columnspan=3,sticky=EW)
         self.download_stats.grid_columnconfigure(0, weight=1)
-        self.download_stats.config(state="disabled")
         
         
         #Unused - not enough time for web page saves
@@ -1751,7 +2196,6 @@ class App(Frame):
         self.parse_stats = Button(text="Parse Halo Reach Stats", font = ('Sans','10','bold'), command=lambda: threadButtonParse(self.gamertag_entry, self.head2headgt_entry, "R"))
         self.parse_stats.grid(row=11,rowspan=2,column=2,columnspan=3,sticky=EW)
         self.parse_stats.grid_columnconfigure(0, weight=1)
-        self.parse_stats.config(state="disabled")
         
         self.status_label = Label(text="", fg="Red", font='Helvetica 10 bold')
         self.status_label.grid(row=13,column=0,columnspan=6,sticky=W)
