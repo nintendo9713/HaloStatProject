@@ -1164,7 +1164,7 @@ def threadButtonParse(gt_entries,h2h_entries,halo_version):
 def parseReachStats(gt_entries): 
    
     global root_directory
-    gamertags = [e.get() for e in gt_entries]
+    gamertags = [e.get().strip() for e in gt_entries]
     
     s = "Parsing " + ','.join(gt for gt in gamertags if gt.strip()) + " Reach stats... (shouldn't take more than 5 seconds)"
     updateGlobalStatus(s)
@@ -1224,7 +1224,7 @@ def parseStats(gt_entries, h2h_entries,halo_version):
 
     global root_directory
     
-    gamertags = [e.get() for e in gt_entries]
+    gamertags = [e.get().strip() for e in gt_entries]
     
     s = "Parsing " + ','.join(gt for gt in gamertags if gt.strip()) + " stats... (shouldn't take more than 5 seconds)"
     updateGlobalStatus(s)
