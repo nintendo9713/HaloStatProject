@@ -1,3 +1,5 @@
+Final Update - Servers were shut down today, 2/9/21.  I ran this thing for 350 tags personally, and got messages from many others using it.  Was fun while it lasted.
+
 If you have any issues, please reach out immediately on Reddit or @nintendo9713#8042 on Discord.
 
 # HaloStatProject
